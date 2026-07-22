@@ -2,6 +2,7 @@
 
 const state = {
   receipts: [],
+  incomes: [],
   merchants: [],
   methods: [],
   receipt: null,
@@ -72,6 +73,7 @@ function switchView(name) {
   $$(".view").forEach((view) => { view.hidden = view.id !== `${name}-view`; });
   $$(".nav-button").forEach((button) => button.classList.toggle("active", button.dataset.view === name));
   if (name === "settings") renderSettings();
+  if (name === "income") renderIncome();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -92,9 +94,15 @@ function renderSelects() {
   });
   $$('[data-payment-select]').forEach((select) => {
     const selected = select.value;
-    select.innerHTML = `<option value="">Choose method</option>${state.methods.filter((method) => method.is_active).map((method) => `<option value="${method.id}">${escapeHtml(methodName(method.id))}</option>`).join("")}`;
+    const placeholder = select.name === "destination_payment_method_id" ? "Not specified" : "Choose method";
+    select.innerHTML = `<option value="">${placeholder}</option>${state.methods.filter((method) => method.is_active).map((method) => `<option value="${method.id}">${escapeHtml(methodName(method.id))}</option>`).join("")}`;
     select.value = selected;
   });
+}
+
+async function loadIncomes() {
+  state.incomes = await api("/income?limit=100");
+  renderIncome();
 }
 
 async function loadReceipts() {
@@ -105,12 +113,13 @@ async function loadReceipts() {
 function renderReceiptIndex() {
   const drafts = state.receipts.filter((receipt) => receipt.status === "draft").length;
   const approved = state.receipts.filter((receipt) => receipt.status === "approved");
-  const approvedTotal = approved.reduce((total, receipt) => total + Number(receipt.stated_total), 0);
+  const approvedTotal = approved.filter((receipt) => receipt.currency === "EUR").reduce((total, receipt) => total + Number(receipt.stated_total), 0);
+  const incomeTotal = state.incomes.filter((entry) => entry.currency === "EUR").reduce((total, entry) => total + Number(entry.amount), 0);
   $("#receipt-summary").innerHTML = [
-    ["Total receipts", state.receipts.length],
+    ["Income (EUR)", money(incomeTotal)],
+    ["Approved expenses (EUR)", money(approvedTotal)],
+    ["Balance (EUR)", money(incomeTotal - approvedTotal)],
     ["Drafts", drafts],
-    ["Approved", approved.length],
-    ["Approved value", money(approvedTotal)],
   ].map(([label, value]) => `<div class="summary"><span>${label}</span><strong>${value}</strong></div>`).join("");
 
   $("#receipt-list").innerHTML = state.receipts.length ? state.receipts.map((receipt) => `
@@ -120,6 +129,18 @@ function renderReceiptIndex() {
       <span class="receipt-amount">${money(receipt.stated_total, receipt.currency)}</span>
       <span class="status ${receipt.status}">${receipt.status}</span>
     </button>`).join("") : `<div class="empty">No receipts yet. Create your first one above.</div>`;
+}
+
+function renderIncome() {
+  const total = state.incomes.filter((entry) => entry.currency === "EUR").reduce((sum, entry) => sum + Number(entry.amount), 0);
+  $("#income-total").textContent = `${money(total)} total`;
+  $("#income-list").innerHTML = state.incomes.length ? state.incomes.map((entry) => `
+    <div class="receipt-row">
+      <span class="line-copy"><strong>${escapeHtml(entry.source)}</strong><small>${titleCase(entry.income_type)}${entry.destination_payment_method_id ? ` · ${escapeHtml(methodName(entry.destination_payment_method_id))}` : ""}</small></span>
+      <span class="receipt-date muted">${formatDate(entry.received_date)}</span>
+      <span class="receipt-amount">${money(entry.amount, entry.currency)}</span>
+      <span class="line-actions"><button class="icon-button" data-edit-income="${entry.id}">Edit</button><button class="icon-button delete" data-delete-income="${entry.id}">Delete</button></span>
+    </div>`).join("") : `<div class="empty">No income recorded yet.</div>`;
 }
 
 async function openReceipt(id) {
@@ -227,11 +248,23 @@ function resetPaymentForm() {
   $("[data-cancel-payment]").hidden = true;
 }
 
+function resetIncomeForm() {
+  const form = $("#income-form");
+  form.reset();
+  form.elements.edit_id.value = "";
+  form.elements.received_date.value = today();
+  form.elements.currency.value = "EUR";
+  $("#income-form-title").textContent = "Add income";
+  form.querySelector("button[type=submit]").textContent = "Add income";
+  $("[data-cancel-income]").hidden = true;
+}
+
 function bindEvents() {
   $$(".nav-button").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   $("#show-create-receipt").addEventListener("click", () => { $("#receipt-create-form").hidden = false; $("#receipt-create-form input[name=purchase_date]").value = today(); });
   $("[data-cancel-create]").addEventListener("click", () => { $("#receipt-create-form").hidden = true; });
   $("#back-to-receipts").addEventListener("click", closeReceipt);
+  $("[data-cancel-income]").addEventListener("click", resetIncomeForm);
 
   $("#receipt-list").addEventListener("click", (event) => {
     const target = event.target.closest("[data-open-receipt]");
@@ -286,13 +319,28 @@ function bindEvents() {
   $("#merchant-form").addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const name = new FormData(form).get("name"); const result = await run(() => api("/merchants", { method: "POST", body: JSON.stringify({ name }) }), "Merchant added").catch(() => null); if (result) { form.reset(); await loadSetup(); await loadReceipts(); } });
   $("#method-form").addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const result = await run(() => api("/payment-methods", { method: "POST", body: JSON.stringify({ name: data.get("name"), method_type: data.get("method_type"), provider: data.get("provider") || null, last_four: data.get("last_four") || null }) }), "Payment method added").catch(() => null); if (result) { form.reset(); await loadSetup(); } });
   $("#method-list").addEventListener("click", async (event) => { const target = event.target.closest("[data-deactivate-method]"); if (target && confirm("Deactivate this payment method? Existing receipt payments stay unchanged.")) { const result = await run(() => api(`/payment-methods/${target.dataset.deactivateMethod}/deactivate`, { method: "POST" }), "Payment method deactivated").catch(() => null); if (result) await loadSetup(); } });
+
+  $("#income-form").addEventListener("submit", async (event) => {
+    event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const editId = data.get("edit_id");
+    const payload = { source: data.get("source"), income_type: data.get("income_type"), received_date: data.get("received_date"), amount: data.get("amount"), currency: String(data.get("currency")).toUpperCase(), destination_payment_method_id: data.get("destination_payment_method_id") || null, notes: data.get("notes") || null };
+    const result = await run(() => api(editId ? `/income/${editId}` : "/income", { method: editId ? "PATCH" : "POST", body: JSON.stringify(payload) }), editId ? "Income updated" : "Income added").catch(() => null);
+    if (result) { resetIncomeForm(); await loadIncomes(); renderReceiptIndex(); }
+  });
+
+  $("#income-list").addEventListener("click", async (event) => {
+    const edit = event.target.closest("[data-edit-income]"); const remove = event.target.closest("[data-delete-income]");
+    if (edit) { const entry = state.incomes.find((item) => item.id === edit.dataset.editIncome); const form = $("#income-form"); form.elements.edit_id.value = entry.id; form.elements.source.value = entry.source; form.elements.income_type.value = entry.income_type; form.elements.received_date.value = entry.received_date; form.elements.amount.value = entry.amount; form.elements.currency.value = entry.currency; form.elements.destination_payment_method_id.value = entry.destination_payment_method_id || ""; form.elements.notes.value = entry.notes || ""; $("#income-form-title").textContent = "Edit income"; form.querySelector("button[type=submit]").textContent = "Save income"; $("[data-cancel-income]").hidden = false; form.scrollIntoView({ behavior: "smooth", block: "start" }); }
+    if (remove && confirm("Delete this income entry?")) { const result = await run(() => api(`/income/${remove.dataset.deleteIncome}`, { method: "DELETE" }), "Income deleted").catch(() => false); if (result !== false) { await loadIncomes(); renderReceiptIndex(); } }
+  });
 }
 
 async function init() {
   bindEvents();
   $("#receipt-create-form input[name=purchase_date]").value = today();
+  $("#income-form input[name=received_date]").value = today();
   try {
     await loadSetup();
+    await loadIncomes();
     await loadReceipts();
     const match = location.hash.match(/^#receipt\/([0-9a-f-]+)$/i);
     if (match) await openReceipt(match[1]);

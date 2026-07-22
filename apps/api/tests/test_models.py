@@ -5,6 +5,7 @@ from app.models import (
     AuditEvent,
     Household,
     HouseholdMember,
+    IncomeEntry,
     Merchant,
     PaymentMethod,
     Receipt,
@@ -25,6 +26,7 @@ def test_all_expected_tables_are_registered() -> None:
         "receipt_items",
         "receipt_payments",
         "audit_events",
+        "income_entries",
     }
 
     assert set(Base.metadata.tables) == expected_tables
@@ -40,6 +42,7 @@ def test_models_use_expected_table_names() -> None:
         User,
         Household,
         HouseholdMember,
+        IncomeEntry,
         Merchant,
         PaymentMethod,
         Receipt,

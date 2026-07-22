@@ -15,6 +15,7 @@ schema versions, and FastAPI opens one transaction per request.
 | `receipts` | Receipt header, lifecycle, total, source, and image metadata |
 | `receipt_items` | Ordered product, discount, fee, tax, or adjustment lines |
 | `receipt_payments` | One or more payment allocations for a receipt |
+| `income_entries` | Positive household income received by a member |
 | `audit_events` | Immutable, deterministically ordered receipt history |
 | `receipt_reconciliation` | View comparing stated, item, and payment totals |
 

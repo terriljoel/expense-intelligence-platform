@@ -1,8 +1,12 @@
 # Expense Intelligence Platform
 
-A local-first expense tracker built with FastAPI and PostgreSQL. FastAPI now
-serves both the JSON API and a small phone-friendly web interface, so there is
-no separate Node.js frontend to install or run.
+A local-first income and expense tracker built with FastAPI and PostgreSQL.
+FastAPI serves both the JSON API and a small phone-friendly web interface, so
+there is no separate Node.js frontend to install or run.
+
+The web interface supports receipts, receipt items, payments, reconciliation,
+approval, income entries, merchants, payment methods, and a simple household
+balance. Dashboard totals currently summarize the default EUR currency.
 
 ## Start the application
 

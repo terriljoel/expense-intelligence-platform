@@ -3,7 +3,7 @@
 BEGIN;
 
 INSERT INTO users (auth_subject, email, display_name)
-VALUES ('local-dev-terril', 'terril@example.test', 'Terril')
+VALUES ('schema-verify-user', 'schema-verify@example.test', 'Schema Verify')
 RETURNING id AS test_user_id \gset
 
 INSERT INTO households (name, default_currency)
@@ -30,6 +30,28 @@ VALUES (
     'cash'
 )
 RETURNING id AS test_payment_method_id \gset
+
+INSERT INTO income_entries (
+    household_id,
+    received_by_user_id,
+    destination_payment_method_id,
+    source,
+    income_type,
+    received_date,
+    amount,
+    currency
+)
+VALUES (
+    :'test_household_id',
+    :'test_user_id',
+    :'test_payment_method_id',
+    'Schema Verification Employer',
+    'salary',
+    CURRENT_DATE,
+    2500.00,
+    'EUR'
+)
+RETURNING id AS test_income_id \gset
 
 INSERT INTO receipts (
     household_id,
@@ -96,6 +118,20 @@ WHERE receipt_id = :'test_receipt_id'
 \echo 'Receipt reconciliation check passed.'
 \else
 \echo 'Receipt reconciliation check failed.'
+\quit 1
+\endif
+
+SELECT
+    CASE WHEN amount = 2500.00 AND income_type = 'salary'
+        THEN 'true' ELSE 'false' END AS income_result
+FROM income_entries
+WHERE id = :'test_income_id'
+\gset
+
+\if :income_result
+\echo 'Income entry check passed.'
+\else
+\echo 'Income entry check failed.'
 \quit 1
 \endif
 

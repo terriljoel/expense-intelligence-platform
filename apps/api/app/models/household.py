@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.income import IncomeEntry
     from app.models.merchant import Merchant
     from app.models.payment_method import PaymentMethod
     from app.models.receipt import Receipt
@@ -61,6 +62,10 @@ class Household(Base):
     receipts: Mapped[list[Receipt]] = relationship(
         back_populates="household",
         foreign_keys="Receipt.household_id",
+    )
+    income_entries: Mapped[list[IncomeEntry]] = relationship(
+        back_populates="household",
+        foreign_keys="IncomeEntry.household_id",
     )
 
 
