@@ -79,6 +79,7 @@ class ReceiptResponse(BaseModel):
     id: UUID
     merchant_id: UUID | None
     created_by_user_id: UUID
+    created_by_display_name: str | None = None
     purchase_date: date
     currency: str
     stated_total: Decimal

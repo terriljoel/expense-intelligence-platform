@@ -80,6 +80,8 @@ def test_payment_reconciliation_and_approval(
     assert listed_payments.status_code == 200
     assert len(listed_payments.json()) == 1
     assert listed_payments.json()[0]["amount"] == "8.50"
+    assert listed_payments.json()[0]["payer_display_name"]
+    assert listed_payments.json()[0]["payment_method_name"] == "Cash"
 
     reconciliation_response = client.get(
         f"/receipts/{receipt_id}/reconciliation"

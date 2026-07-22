@@ -1,0 +1,129 @@
+<mxfile host="Electron" agent="Codex">
+  <diagram id="expense-current" name="Current PostgreSQL Schema">
+    <mxGraphModel dx="2200" dy="1500" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="1500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=24;fontStyle=1;" value="Expense Intelligence Platform — PostgreSQL 16 (Receipts, Income &amp; Authentication)" vertex="1">
+          <mxGeometry height="40" width="1200" x="40" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=left;spacingLeft=8;" value="PK = primary key   FK = foreign key   UQ = unique key   ? = nullable   dashed = derived view" vertex="1">
+          <mxGeometry height="40" width="650" x="1290" y="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="users" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=14;" value="users" vertex="1">
+          <mxGeometry height="220" width="280" x="40" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="users_fields" parent="users" style="text;html=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=8;fontFamily=Consolas;fontSize=12;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; auth_subject : TEXT&lt;br&gt;&lt;b&gt;UQ ?&lt;/b&gt; email : TEXT&lt;br&gt;display_name : TEXT&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ" vertex="1">
+          <mxGeometry height="190" width="280" y="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="user_credentials" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=14;" value="user_credentials" vertex="1">
+          <mxGeometry height="190" width="300" x="360" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="user_credentials_fields" parent="user_credentials" style="text;html=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=8;fontFamily=Consolas;fontSize=12;" value="&lt;b&gt;PK, FK&lt;/b&gt; user_id : UUID&lt;br&gt;password_hash : TEXT&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ&lt;br&gt;&lt;i&gt;Argon2 hash; never plaintext&lt;/i&gt;" vertex="1">
+          <mxGeometry height="160" width="300" y="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="households" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=14;" value="households" vertex="1">
+          <mxGeometry height="190" width="280" x="710" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="households_fields" parent="households" style="text;html=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=8;fontFamily=Consolas;fontSize=12;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;name : TEXT&lt;br&gt;default_currency : VARCHAR(3)&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ" vertex="1">
+          <mxGeometry height="160" width="280" y="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="household_members" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=14;" value="household_members" vertex="1">
+          <mxGeometry height="190" width="340" x="1040" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="household_members_fields" parent="household_members" style="text;html=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=8;fontFamily=Consolas;fontSize=12;" value="&lt;b&gt;PK, FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;PK, FK&lt;/b&gt; user_id : UUID&lt;br&gt;role : owner | admin | member&lt;br&gt;joined_at : TIMESTAMPTZ" vertex="1">
+          <mxGeometry height="160" width="340" y="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="auth_sessions" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=14;" value="auth_sessions" vertex="1">
+          <mxGeometry height="250" width="360" x="1430" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="auth_sessions_fields" parent="auth_sessions" style="text;html=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=8;fontFamily=Consolas;fontSize=12;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; user_id : UUID&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; token_hash : VARCHAR(64)&lt;br&gt;expires_at : TIMESTAMPTZ&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; (household_id, user_id)&lt;br&gt;&lt;i&gt;Only SHA-256 token hash is stored&lt;/i&gt;" vertex="1">
+          <mxGeometry height="220" width="360" y="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="merchants" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=14;" value="merchants" vertex="1">
+          <mxGeometry height="240" width="300" x="40" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="merchants_fields" parent="merchants" style="text;html=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=8;fontFamily=Consolas;fontSize=12;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;name : TEXT&lt;br&gt;normalized_name : TEXT&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; (id, household_id)&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; (household_id, normalized_name)" vertex="1">
+          <mxGeometry height="210" width="300" y="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="payment_methods" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=14;" value="payment_methods" vertex="1">
+          <mxGeometry height="330" width="380" x="390" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="payment_methods_fields" parent="payment_methods" style="text;html=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=8;fontFamily=Consolas;fontSize=12;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; user_id : UUID&lt;br&gt;name : TEXT&lt;br&gt;method_type : TEXT&lt;br&gt;provider : TEXT ?&lt;br&gt;last_four : VARCHAR(4) ?&lt;br&gt;is_active : BOOLEAN&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; (id, household_id, user_id)&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; member (household_id, user_id)" vertex="1">
+          <mxGeometry height="300" width="380" y="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="income_entries" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=14;" value="income_entries" vertex="1">
+          <mxGeometry height="390" width="430" x="820" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="income_entries_fields" parent="income_entries" style="text;html=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=8;fontFamily=Consolas;fontSize=12;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; received_by_user_id : UUID&lt;br&gt;&lt;b&gt;FK ?&lt;/b&gt; destination_payment_method_id : UUID&lt;br&gt;source : TEXT&lt;br&gt;income_type : salary | freelance | interest | gift | refund | other&lt;br&gt;received_date : DATE&lt;br&gt;amount : NUMERIC(14,2)&lt;br&gt;currency : VARCHAR(3)&lt;br&gt;notes : TEXT ?&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; receiving member&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; destination method + member" vertex="1">
+          <mxGeometry height="360" width="430" y="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="receipts" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=14;" value="receipts" vertex="1">
+          <mxGeometry height="500" width="440" x="1310" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="receipts_fields" parent="receipts" style="text;html=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=8;fontFamily=Consolas;fontSize=12;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;FK ?&lt;/b&gt; merchant_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; created_by_user_id : UUID&lt;br&gt;purchase_date : DATE&lt;br&gt;currency : VARCHAR(3)&lt;br&gt;stated_total : NUMERIC(14,2)&lt;br&gt;status : TEXT&lt;br&gt;source : TEXT&lt;br&gt;image_object_key : TEXT ?&lt;br&gt;image_sha256 : VARCHAR(64) ?&lt;br&gt;notes : TEXT ?&lt;br&gt;approved_at : TIMESTAMPTZ ?&lt;br&gt;voided_at : TIMESTAMPTZ ?&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; (id, household_id)&lt;br&gt;&lt;b&gt;Partial UQ&lt;/b&gt; active image hash per household" vertex="1">
+          <mxGeometry height="470" width="440" y="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="audit_events" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=14;" value="audit_events (append-only)" vertex="1">
+          <mxGeometry height="300" width="440" x="40" y="990" as="geometry" />
+        </mxCell>
+        <mxCell id="audit_events_fields" parent="audit_events" style="text;html=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=8;fontFamily=Consolas;fontSize=12;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; sequence_number : BIGINT IDENTITY&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; actor_user_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; receipt_id : UUID&lt;br&gt;event_type : TEXT&lt;br&gt;event_data : JSONB&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; actor membership&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; receipt + household&lt;br&gt;&lt;i&gt;UPDATE and DELETE rejected by triggers&lt;/i&gt;" vertex="1">
+          <mxGeometry height="270" width="440" y="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="receipt_items" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=14;" value="receipt_items" vertex="1">
+          <mxGeometry height="400" width="390" x="530" y="950" as="geometry" />
+        </mxCell>
+        <mxCell id="receipt_items_fields" parent="receipt_items" style="text;html=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=8;fontFamily=Consolas;fontSize=12;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; receipt_id : UUID&lt;br&gt;position : INTEGER&lt;br&gt;line_type : TEXT&lt;br&gt;raw_description : TEXT ?&lt;br&gt;description : TEXT&lt;br&gt;raw_quantity_text : TEXT ?&lt;br&gt;quantity : NUMERIC(12,3) ?&lt;br&gt;unit_price : NUMERIC(14,4) ?&lt;br&gt;line_total : NUMERIC(14,2)&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; (receipt_id, position)&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; receipt + household" vertex="1">
+          <mxGeometry height="370" width="390" y="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="receipt_payments" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=14;" value="receipt_payments" vertex="1">
+          <mxGeometry height="300" width="430" x="970" y="980" as="geometry" />
+        </mxCell>
+        <mxCell id="receipt_payments_fields" parent="receipt_payments" style="text;html=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=8;fontFamily=Consolas;fontSize=12;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; user_id : UUID&lt;br&gt;&lt;b&gt;FK ?&lt;/b&gt; payment_method_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; receipt_id : UUID&lt;br&gt;amount : NUMERIC(14,2)&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; receipt + user + method&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; receipt + household&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; method + household + user" vertex="1">
+          <mxGeometry height="270" width="430" y="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="reconciliation" parent="1" style="swimlane;html=1;startSize=30;rounded=1;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=14;" value="receipt_reconciliation (VIEW)" vertex="1">
+          <mxGeometry height="290" width="450" x="1450" y="990" as="geometry" />
+        </mxCell>
+        <mxCell id="reconciliation_fields" parent="reconciliation" style="text;html=1;align=left;verticalAlign=top;spacingTop=8;spacingLeft=8;fontFamily=Consolas;fontSize=12;" value="receipt_id : UUID&lt;br&gt;household_id : UUID&lt;br&gt;stated_total : NUMERIC(14,2)&lt;br&gt;item_total : NUMERIC(14,2)&lt;br&gt;payment_total : NUMERIC(14,2)&lt;br&gt;item_difference : NUMERIC(14,2)&lt;br&gt;payment_difference : NUMERIC(14,2)&lt;br&gt;item_count : BIGINT&lt;br&gt;payment_count : BIGINT&lt;br&gt;is_reconciled : BOOLEAN&lt;br&gt;&lt;i&gt;Derived; not a stored table&lt;/i&gt;" vertex="1">
+          <mxGeometry height="260" width="450" y="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_users_credentials" edge="1" parent="1" source="users" target="user_credentials" value="1 : 0..1 credential" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERzeroToOne;endFill=0;strokeColor=#b85450;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_users_members" edge="1" parent="1" source="users" target="household_members" value="1 : N memberships" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#666666;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_households_members" edge="1" parent="1" source="households" target="household_members" value="1 : N members" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#666666;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_members_sessions" edge="1" parent="1" source="household_members" target="auth_sessions" value="1 : N sessions" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#b85450;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_households_merchants" edge="1" parent="1" source="households" target="merchants" value="1 : N" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#9673a6;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_members_methods" edge="1" parent="1" source="household_members" target="payment_methods" value="member owns methods" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#d6b656;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_households_income" edge="1" parent="1" source="households" target="income_entries" value="1 : N income" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#82b366;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_members_income" edge="1" parent="1" source="household_members" target="income_entries" value="received by" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#82b366;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_methods_income" edge="1" parent="1" source="payment_methods" target="income_entries" value="optional destination" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERzeroToOne;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#82b366;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_households_receipts" edge="1" parent="1" source="households" target="receipts" value="1 : N receipts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#b85450;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_members_receipts" edge="1" parent="1" source="household_members" target="receipts" value="created by" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#b85450;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_merchants_receipts" edge="1" parent="1" source="merchants" target="receipts" value="optional merchant" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERzeroToOne;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#9673a6;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_receipts_items" edge="1" parent="1" source="receipts" target="receipt_items" value="1 : N items" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#d79b00;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_receipts_payments" edge="1" parent="1" source="receipts" target="receipt_payments" value="1 : N payments" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#d6b656;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_methods_payments" edge="1" parent="1" source="payment_methods" target="receipt_payments" value="method used" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERzeroToOne;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#d6b656;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_members_payments" edge="1" parent="1" source="household_members" target="receipt_payments" value="paid by" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#d6b656;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_receipts_audit" edge="1" parent="1" source="receipts" target="audit_events" value="1 : N events" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#82b366;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_members_audit" edge="1" parent="1" source="household_members" target="audit_events" value="actor" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=ERone;startFill=0;endArrow=ERmany;endFill=0;strokeColor=#82b366;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_receipts_view" edge="1" parent="1" source="receipts" target="reconciliation" value="derived" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;endArrow=open;endFill=0;strokeColor=#999999;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_items_view" edge="1" parent="1" source="receipt_items" target="reconciliation" value="SUM(line_total)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;endArrow=open;endFill=0;strokeColor=#999999;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_payments_view" edge="1" parent="1" source="receipt_payments" target="reconciliation" value="SUM(amount)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;endArrow=open;endFill=0;strokeColor=#999999;"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -10,6 +10,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.routes.merchants import router as merchants_router
 from app.api.routes.income import router as income_router
+from app.api.routes.auth import router as auth_router
+from app.api.routes.invitations import household_router, invitation_router
 from app.api.routes.payment_methods import router as payment_methods_router
 from app.api.routes.receipts import router as receipts_router
 from app.db.session import engine
@@ -32,6 +34,9 @@ app = FastAPI(
 
 app.include_router(merchants_router)
 app.include_router(income_router)
+app.include_router(auth_router)
+app.include_router(household_router)
+app.include_router(invitation_router)
 app.include_router(payment_methods_router)
 app.include_router(receipts_router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

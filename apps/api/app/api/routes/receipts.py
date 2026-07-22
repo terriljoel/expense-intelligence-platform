@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import CurrentPrincipal, get_current_principal
 from app.db.session import get_db_session
+from app.models import PaymentMethod, Receipt, ReceiptPayment, User
 from app.schemas.receipt import (
     AuditEventResponse,
     ReceiptCreate,
@@ -55,6 +56,43 @@ from app.services.receipt import (
 router = APIRouter(prefix="/receipts", tags=["receipts"])
 
 
+def _receipt_response(
+    session: Session, receipt: Receipt
+) -> ReceiptResponse:
+    creator = session.get(User, receipt.created_by_user_id)
+    return ReceiptResponse.model_validate(receipt).model_copy(
+        update={
+            "created_by_display_name": (
+                creator.display_name if creator is not None else None
+            )
+        }
+    )
+
+
+def _payment_response(
+    session: Session, payment: ReceiptPayment
+) -> ReceiptPaymentResponse:
+    payer = session.get(User, payment.user_id)
+    method = (
+        session.get(PaymentMethod, payment.payment_method_id)
+        if payment.payment_method_id is not None
+        else None
+    )
+    return ReceiptPaymentResponse.model_validate(payment).model_copy(
+        update={
+            "payer_display_name": (
+                payer.display_name if payer is not None else None
+            ),
+            "payment_method_name": (
+                method.name if method is not None else None
+            ),
+            "payment_method_last_four": (
+                method.last_four if method is not None else None
+            ),
+        }
+    )
+
+
 @router.post(
     "",
     response_model=ReceiptResponse,
@@ -82,7 +120,7 @@ def post_receipt(
             detail="Merchant not found in this household",
         ) from exc
 
-    return ReceiptResponse.model_validate(receipt)
+    return _receipt_response(session, receipt)
 
 
 @router.get("", response_model=list[ReceiptResponse])
@@ -98,7 +136,7 @@ def get_receipts(
         limit=limit,
         offset=offset,
     )
-    return [ReceiptResponse.model_validate(receipt) for receipt in receipts]
+    return [_receipt_response(session, receipt) for receipt in receipts]
 
 
 @router.get("/{receipt_id}", response_model=ReceiptResponse)
@@ -119,7 +157,7 @@ def get_receipt_by_id(
             detail="Receipt not found",
         ) from exc
 
-    return ReceiptResponse.model_validate(receipt)
+    return _receipt_response(session, receipt)
 
 
 @router.patch("/{receipt_id}", response_model=ReceiptResponse)
@@ -152,7 +190,7 @@ def patch_receipt(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only draft receipts can be edited",
         ) from exc
-    return ReceiptResponse.model_validate(receipt)
+    return _receipt_response(session, receipt)
 
 
 @router.post(
@@ -348,7 +386,7 @@ def post_receipt_payment(
             detail="Payment method already used for this receipt",
         ) from exc
 
-    return ReceiptPaymentResponse.model_validate(payment)
+    return _payment_response(session, payment)
 
 
 @router.get(
@@ -372,7 +410,7 @@ def get_receipt_payments(
             detail="Receipt not found",
         ) from exc
     return [
-        ReceiptPaymentResponse.model_validate(payment) for payment in payments
+        _payment_response(session, payment) for payment in payments
     ]
 
 
@@ -421,7 +459,7 @@ def patch_receipt_payment(
             status_code=status.HTTP_409_CONFLICT,
             detail="Payment method already used for this receipt",
         ) from exc
-    return ReceiptPaymentResponse.model_validate(payment)
+    return _payment_response(session, payment)
 
 
 @router.delete(
@@ -538,7 +576,7 @@ def post_receipt_approval(
             detail="Receipt items and payments do not reconcile",
         ) from exc
 
-    return ReceiptResponse.model_validate(receipt)
+    return _receipt_response(session, receipt)
 
 
 @router.post("/{receipt_id}/void", response_model=ReceiptResponse)
@@ -566,4 +604,4 @@ def post_receipt_void(
             status_code=status.HTTP_409_CONFLICT,
             detail="Receipt cannot be voided from its current status",
         ) from exc
-    return ReceiptResponse.model_validate(receipt)
+    return _receipt_response(session, receipt)

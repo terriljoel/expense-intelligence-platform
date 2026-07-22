@@ -92,6 +92,7 @@ class IncomeResponse(BaseModel):
 
     id: UUID
     received_by_user_id: UUID
+    received_by_display_name: str | None = None
     destination_payment_method_id: UUID | None
     source: str
     income_type: str

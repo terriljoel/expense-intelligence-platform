@@ -5,6 +5,7 @@ SQLAlchemy==2.0.51
 alembic==1.18.5
 psycopg[binary]==3.3.4
 pydantic-settings==2.14.2
+pwdlib[argon2]==0.3.0
 
 # Test and quality dependencies
 httpx2==2.7.0

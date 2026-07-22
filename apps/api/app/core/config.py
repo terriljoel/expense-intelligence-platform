@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     """Application configuration loaded from environment variables."""
 
     database_url: str = Field(repr=False)
+    auth_session_hours: int = Field(default=12, ge=1, le=720)
+    session_cookie_secure: bool = False
+    invitation_hours: int = Field(default=168, ge=1, le=720)
 
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",

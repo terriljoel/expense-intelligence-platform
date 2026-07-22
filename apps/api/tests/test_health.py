@@ -21,6 +21,8 @@ def test_web_app_is_served() -> None:
     assert response.status_code == 200
     assert "Expense Intelligence" in response.text
     assert "/static/app.js" in response.text
+    assert 'id="household-selector"' in response.text
+    assert 'id="create-household-button"' in response.text
 
 
 def test_health_ready() -> None:

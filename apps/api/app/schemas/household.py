@@ -1,0 +1,51 @@
+from datetime import datetime
+from typing import Literal, Self
+from uuid import UUID
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class HouseholdResponse(BaseModel):
+    household_id: UUID
+    name: str
+    default_currency: str
+    role: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class HouseholdUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    default_currency: str | None = Field(
+        default=None, min_length=3, max_length=3
+    )
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("Household name cannot be blank")
+        return cleaned
+
+    @field_validator("default_currency")
+    @classmethod
+    def normalize_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip().upper()
+        if len(cleaned) != 3 or not cleaned.isalpha():
+            raise ValueError("Currency must be a three-letter code")
+        return cleaned
+
+    @model_validator(mode="after")
+    def require_change(self) -> Self:
+        if not self.model_fields_set:
+            raise ValueError("At least one field must be supplied")
+        return self
+
+
+class MemberRoleUpdate(BaseModel):
+    role: Literal["owner", "admin", "member"]

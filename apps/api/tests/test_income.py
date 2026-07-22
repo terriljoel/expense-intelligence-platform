@@ -56,6 +56,7 @@ def test_create_get_and_list_income(income_client: TestClient) -> None:
     assert entry["amount"] == "2500.00"
     assert entry["notes"] == "Monthly salary"
     assert entry["received_by_user_id"]
+    assert entry["received_by_display_name"]
     assert entry["destination_payment_method_id"]
 
     get_response = income_client.get(f"/income/{entry['id']}")

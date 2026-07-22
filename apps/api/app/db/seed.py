@@ -85,6 +85,9 @@ def seed_development_data(session: Session) -> SeedResult:
         )
         session.add(payment_method)
         session.flush()
+    elif not payment_method.is_active:
+        payment_method.is_active = True
+        session.flush()
 
     return SeedResult(
         user_id=user.id,

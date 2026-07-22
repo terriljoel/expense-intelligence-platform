@@ -1,0 +1,200 @@
+from collections.abc import Generator
+from dataclasses import dataclass
+from uuid import UUID, uuid4
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from app.api.dependencies import CurrentPrincipal, get_current_principal
+from app.db.seed import SeedResult, seed_development_data
+from app.db.session import engine, get_db_session
+from app.main import app
+from app.models import Household, HouseholdMember, User
+from app.services.invitation import (
+    accept_existing_user_invitation,
+    create_invitation,
+)
+
+
+@dataclass(frozen=True)
+class HouseholdAdminContext:
+    client: TestClient
+    session: Session
+    seed: SeedResult
+
+
+@pytest.fixture
+def household_admin_context() -> Generator[HouseholdAdminContext, None, None]:
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        session = Session(bind=connection)
+        seed = seed_development_data(session)
+
+        def override_session() -> Generator[Session, None, None]:
+            yield session
+
+        def owner_principal() -> CurrentPrincipal:
+            return CurrentPrincipal(
+                user_id=seed.user_id,
+                household_id=seed.household_id,
+                role="owner",
+            )
+
+        app.dependency_overrides[get_db_session] = override_session
+        app.dependency_overrides[get_current_principal] = owner_principal
+        try:
+            with TestClient(app) as client:
+                yield HouseholdAdminContext(client, session, seed)
+        finally:
+            app.dependency_overrides.clear()
+            session.close()
+            transaction.rollback()
+
+
+def _add_member(
+    session: Session, *, household_id: UUID
+) -> tuple[User, HouseholdMember]:
+    user = User(
+        auth_subject=f"household-admin-test:{uuid4()}",
+        email=f"{uuid4()}@example.test",
+        display_name="Household Test Member",
+    )
+    session.add(user)
+    session.flush()
+    membership = HouseholdMember(
+        household_id=household_id,
+        user_id=user.id,
+        role="member",
+    )
+    session.add(membership)
+    session.flush()
+    return user, membership
+
+
+def test_owner_can_manage_settings_roles_and_remove_member_safely(
+    household_admin_context: HouseholdAdminContext,
+) -> None:
+    context = household_admin_context
+    member, membership = _add_member(
+        context.session,
+        household_id=context.seed.household_id,
+    )
+    settings = context.client.patch(
+        "/household",
+        json={"name": "Managed Household", "default_currency": "GBP"},
+    )
+    promoted = context.client.patch(
+        f"/household/members/{member.id}",
+        json={"role": "admin"},
+    )
+
+    app.dependency_overrides[get_current_principal] = lambda: CurrentPrincipal(
+        user_id=member.id,
+        household_id=context.seed.household_id,
+        role="admin",
+    )
+    admin_cannot_change_owner = context.client.patch(
+        f"/household/members/{context.seed.user_id}",
+        json={"role": "member"},
+    )
+    created_receipt = context.client.post(
+        "/receipts",
+        json={
+            "purchase_date": "2026-07-23",
+            "currency": "GBP",
+            "stated_total": "7.00",
+        },
+    )
+    app.dependency_overrides[get_current_principal] = lambda: CurrentPrincipal(
+        user_id=context.seed.user_id,
+        household_id=context.seed.household_id,
+        role="owner",
+    )
+    removed = context.client.delete(f"/household/members/{member.id}")
+    active_members = context.client.get("/household/members")
+    receipts = context.client.get("/receipts")
+    context.session.refresh(membership)
+
+    assert settings.status_code == 200
+    assert settings.json()["name"] == "Managed Household"
+    assert settings.json()["default_currency"] == "GBP"
+    assert promoted.status_code == 200
+    assert promoted.json()["role"] == "admin"
+    assert admin_cannot_change_owner.status_code == 403
+    assert created_receipt.status_code == 201
+    assert removed.status_code == 204
+    assert membership.is_active is False
+    assert str(member.id) not in {
+        item["user_id"] for item in active_members.json()
+    }
+    preserved = next(
+        item
+        for item in receipts.json()
+        if item["id"] == created_receipt.json()["id"]
+    )
+    assert preserved["created_by_display_name"] == member.display_name
+
+
+def test_last_owner_cannot_be_demoted_removed_or_leave(
+    household_admin_context: HouseholdAdminContext,
+) -> None:
+    context = household_admin_context
+    household = Household(name="Single Owner Household", default_currency="EUR")
+    context.session.add(household)
+    context.session.flush()
+    context.session.add(
+        HouseholdMember(
+            household_id=household.id,
+            user_id=context.seed.user_id,
+            role="owner",
+        )
+    )
+    context.session.flush()
+    app.dependency_overrides[get_current_principal] = lambda: CurrentPrincipal(
+        user_id=context.seed.user_id,
+        household_id=household.id,
+        role="owner",
+    )
+    demoted = context.client.patch(
+        f"/household/members/{context.seed.user_id}",
+        json={"role": "member"},
+    )
+    removed = context.client.delete(
+        f"/household/members/{context.seed.user_id}"
+    )
+    left = context.client.post("/household/leave")
+
+    assert demoted.status_code == 409
+    assert removed.status_code == 409
+    assert left.status_code == 409
+
+
+def test_removed_member_can_be_invited_back(
+    household_admin_context: HouseholdAdminContext,
+) -> None:
+    context = household_admin_context
+    member, membership = _add_member(
+        context.session,
+        household_id=context.seed.household_id,
+    )
+    removed = context.client.delete(f"/household/members/{member.id}")
+    invitation, token = create_invitation(
+        context.session,
+        household_id=context.seed.household_id,
+        invited_by_user_id=context.seed.user_id,
+        email=member.email or "",
+        role="member",
+        invitation_hours=24,
+    )
+    accepted = accept_existing_user_invitation(
+        context.session,
+        token=token,
+        user_id=member.id,
+    )
+    context.session.refresh(membership)
+
+    assert removed.status_code == 204
+    assert accepted.id == invitation.id
+    assert membership.is_active is True
+    assert membership.role == "member"

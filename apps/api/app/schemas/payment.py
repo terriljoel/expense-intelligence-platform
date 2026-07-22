@@ -123,7 +123,10 @@ class ReceiptPaymentResponse(BaseModel):
     id: UUID
     receipt_id: UUID
     user_id: UUID
+    payer_display_name: str | None = None
     payment_method_id: UUID | None
+    payment_method_name: str | None = None
+    payment_method_last_four: str | None = None
     amount: Decimal
     created_at: datetime
 

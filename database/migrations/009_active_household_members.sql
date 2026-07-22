@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE household_members
+    ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE;
+
+COMMIT;

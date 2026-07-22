@@ -1,0 +1,108 @@
+<mxfile host="Electron" agent="Codex">
+  <diagram id="expense-multi-user" name="Current Multi-user Schema">
+    <mxGraphModel dx="2400" dy="1800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2300" pageHeight="1800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;fontSize=24;fontStyle=1;align=left;" value="Expense Intelligence Platform — Current PostgreSQL Multi-user ER" vertex="1">
+          <mxGeometry x="40" y="20" width="1500" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;spacingLeft=8;" value="PK = primary key   FK = foreign key   UQ = unique   ? = nullable   dashed = database view" vertex="1">
+          <mxGeometry x="1600" y="20" width="620" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="users" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" value="users" vertex="1">
+          <mxGeometry x="40" y="100" width="380" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="users_f" parent="users" style="text;html=1;align=left;verticalAlign=top;spacing=8;fontFamily=Consolas;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; auth_subject : TEXT&lt;br&gt;&lt;b&gt;UQ ?&lt;/b&gt; email : TEXT&lt;br&gt;display_name : TEXT&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ" vertex="1"><mxGeometry y="30" width="380" height="200" as="geometry" /></mxCell>
+
+        <mxCell id="user_credentials" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" value="user_credentials" vertex="1">
+          <mxGeometry x="470" y="100" width="380" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="user_credentials_f" parent="user_credentials" style="text;html=1;align=left;verticalAlign=top;spacing=8;fontFamily=Consolas;" value="&lt;b&gt;PK, FK&lt;/b&gt; user_id : UUID&lt;br&gt;password_hash : TEXT&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ&lt;br&gt;&lt;i&gt;Argon2; never plaintext&lt;/i&gt;" vertex="1"><mxGeometry y="30" width="380" height="180" as="geometry" /></mxCell>
+
+        <mxCell id="households" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" value="households" vertex="1">
+          <mxGeometry x="900" y="100" width="380" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="households_f" parent="households" style="text;html=1;align=left;verticalAlign=top;spacing=8;fontFamily=Consolas;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;name : TEXT&lt;br&gt;default_currency : VARCHAR(3)&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ" vertex="1"><mxGeometry y="30" width="380" height="180" as="geometry" /></mxCell>
+
+        <mxCell id="household_members" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" value="household_members" vertex="1">
+          <mxGeometry x="1330" y="100" width="380" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="household_members_f" parent="household_members" style="text;html=1;align=left;verticalAlign=top;spacing=8;fontFamily=Consolas;" value="&lt;b&gt;PK, FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;PK, FK&lt;/b&gt; user_id : UUID&lt;br&gt;role : owner | admin | member&lt;br&gt;joined_at : TIMESTAMPTZ" vertex="1"><mxGeometry y="30" width="380" height="180" as="geometry" /></mxCell>
+
+        <mxCell id="household_invitations" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" value="household_invitations" vertex="1">
+          <mxGeometry x="1760" y="90" width="440" height="340" as="geometry" />
+        </mxCell>
+        <mxCell id="household_invitations_f" parent="household_invitations" style="text;html=1;align=left;verticalAlign=top;spacing=8;fontFamily=Consolas;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;email : TEXT (normalized)&lt;br&gt;role : admin | member&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; token_hash : VARCHAR(64)&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; invited_by_user_id : UUID&lt;br&gt;expires_at : TIMESTAMPTZ&lt;br&gt;accepted_at : TIMESTAMPTZ ?&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;Partial UQ&lt;/b&gt; pending household + email&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; inviter membership&lt;br&gt;&lt;i&gt;Only SHA-256 token hash is stored&lt;/i&gt;" vertex="1"><mxGeometry y="30" width="440" height="310" as="geometry" /></mxCell>
+
+        <mxCell id="auth_sessions" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" value="auth_sessions" vertex="1">
+          <mxGeometry x="40" y="510" width="380" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="auth_sessions_f" parent="auth_sessions" style="text;html=1;align=left;verticalAlign=top;spacing=8;fontFamily=Consolas;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; user_id : UUID&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; token_hash : VARCHAR(64)&lt;br&gt;expires_at : TIMESTAMPTZ&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; member&lt;br&gt;&lt;i&gt;Only SHA-256 token hash is stored&lt;/i&gt;" vertex="1"><mxGeometry y="30" width="380" height="250" as="geometry" /></mxCell>
+
+        <mxCell id="merchants" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" value="merchants" vertex="1">
+          <mxGeometry x="470" y="510" width="380" height="270" as="geometry" />
+        </mxCell>
+        <mxCell id="merchants_f" parent="merchants" style="text;html=1;align=left;verticalAlign=top;spacing=8;fontFamily=Consolas;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;name : TEXT&lt;br&gt;normalized_name : TEXT&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; household + normalized_name" vertex="1"><mxGeometry y="30" width="380" height="240" as="geometry" /></mxCell>
+
+        <mxCell id="payment_methods" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" value="payment_methods" vertex="1">
+          <mxGeometry x="900" y="490" width="380" height="360" as="geometry" />
+        </mxCell>
+        <mxCell id="payment_methods_f" parent="payment_methods" style="text;html=1;align=left;verticalAlign=top;spacing=8;fontFamily=Consolas;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; user_id : UUID&lt;br&gt;name : TEXT&lt;br&gt;method_type : TEXT&lt;br&gt;provider : TEXT ?&lt;br&gt;last_four : VARCHAR(4) ?&lt;br&gt;is_active : BOOLEAN&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; id + household + user&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; owner membership" vertex="1"><mxGeometry y="30" width="380" height="330" as="geometry" /></mxCell>
+
+        <mxCell id="income_entries" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" value="income_entries" vertex="1">
+          <mxGeometry x="1330" y="490" width="380" height="390" as="geometry" />
+        </mxCell>
+        <mxCell id="income_entries_f" parent="income_entries" style="text;html=1;align=left;verticalAlign=top;spacing=8;fontFamily=Consolas;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; received_by_user_id : UUID&lt;br&gt;&lt;b&gt;FK ?&lt;/b&gt; destination_payment_method_id : UUID&lt;br&gt;source : TEXT&lt;br&gt;income_type : TEXT&lt;br&gt;received_date : DATE&lt;br&gt;amount : NUMERIC(14,2)&lt;br&gt;currency : VARCHAR(3)&lt;br&gt;notes : TEXT ?&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; member and destination method" vertex="1"><mxGeometry y="30" width="380" height="360" as="geometry" /></mxCell>
+
+        <mxCell id="receipts" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" value="receipts" vertex="1">
+          <mxGeometry x="1760" y="480" width="440" height="450" as="geometry" />
+        </mxCell>
+        <mxCell id="receipts_f" parent="receipts" style="text;html=1;align=left;verticalAlign=top;spacing=8;fontFamily=Consolas;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;FK ?&lt;/b&gt; merchant_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; created_by_user_id : UUID&lt;br&gt;purchase_date : DATE&lt;br&gt;currency : VARCHAR(3)&lt;br&gt;stated_total : NUMERIC(14,2)&lt;br&gt;status : TEXT&lt;br&gt;source : TEXT&lt;br&gt;image_object_key : TEXT ?&lt;br&gt;image_sha256 : VARCHAR(64) ?&lt;br&gt;notes : TEXT ?&lt;br&gt;approved_at : TIMESTAMPTZ ?&lt;br&gt;voided_at : TIMESTAMPTZ ?&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; id + household" vertex="1"><mxGeometry y="30" width="440" height="420" as="geometry" /></mxCell>
+
+        <mxCell id="receipt_items" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;" value="receipt_items" vertex="1">
+          <mxGeometry x="40" y="1010" width="390" height="390" as="geometry" />
+        </mxCell>
+        <mxCell id="receipt_items_f" parent="receipt_items" style="text;html=1;align=left;verticalAlign=top;spacing=8;fontFamily=Consolas;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; receipt_id : UUID&lt;br&gt;position : INTEGER&lt;br&gt;line_type : TEXT&lt;br&gt;raw_description : TEXT ?&lt;br&gt;description : TEXT&lt;br&gt;raw_quantity_text : TEXT ?&lt;br&gt;quantity : NUMERIC(12,3) ?&lt;br&gt;unit_price : NUMERIC(14,4) ?&lt;br&gt;line_total : NUMERIC(14,2)&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;updated_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; receipt + position" vertex="1"><mxGeometry y="30" width="390" height="360" as="geometry" /></mxCell>
+
+        <mxCell id="receipt_payments" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" value="receipt_payments" vertex="1">
+          <mxGeometry x="480" y="1010" width="400" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="receipt_payments_f" parent="receipt_payments" style="text;html=1;align=left;verticalAlign=top;spacing=8;fontFamily=Consolas;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; user_id : UUID&lt;br&gt;&lt;b&gt;FK ?&lt;/b&gt; payment_method_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; receipt_id : UUID&lt;br&gt;amount : NUMERIC(14,2)&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; receipt + user + method&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; receipt and owned method" vertex="1"><mxGeometry y="30" width="400" height="290" as="geometry" /></mxCell>
+
+        <mxCell id="audit_events" parent="1" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" value="audit_events (append-only)" vertex="1">
+          <mxGeometry x="930" y="1010" width="420" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="audit_events_f" parent="audit_events" style="text;html=1;align=left;verticalAlign=top;spacing=8;fontFamily=Consolas;" value="&lt;b&gt;PK&lt;/b&gt; id : UUID&lt;br&gt;&lt;b&gt;UQ&lt;/b&gt; sequence_number : BIGINT&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; household_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; actor_user_id : UUID&lt;br&gt;&lt;b&gt;FK&lt;/b&gt; receipt_id : UUID&lt;br&gt;event_type : TEXT&lt;br&gt;event_data : JSONB&lt;br&gt;created_at : TIMESTAMPTZ&lt;br&gt;&lt;b&gt;FK scope&lt;/b&gt; actor and receipt&lt;br&gt;&lt;i&gt;UPDATE/DELETE blocked by triggers&lt;/i&gt;" vertex="1"><mxGeometry y="30" width="420" height="300" as="geometry" /></mxCell>
+
+        <mxCell id="reconciliation" parent="1" style="swimlane;html=1;startSize=30;rounded=1;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;" value="receipt_reconciliation (VIEW)" vertex="1">
+          <mxGeometry x="1410" y="1010" width="440" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="reconciliation_f" parent="reconciliation" style="text;html=1;align=left;verticalAlign=top;spacing=8;fontFamily=Consolas;" value="receipt_id : UUID&lt;br&gt;household_id : UUID&lt;br&gt;stated_total : NUMERIC(14,2)&lt;br&gt;item_total : NUMERIC(14,2)&lt;br&gt;payment_total : NUMERIC(14,2)&lt;br&gt;item_difference : NUMERIC(14,2)&lt;br&gt;payment_difference : NUMERIC(14,2)&lt;br&gt;item_count : BIGINT&lt;br&gt;payment_count : BIGINT&lt;br&gt;is_reconciled : BOOLEAN&lt;br&gt;&lt;i&gt;Derived, not stored&lt;/i&gt;" vertex="1"><mxGeometry y="30" width="440" height="300" as="geometry" /></mxCell>
+
+        <mxCell id="e1" edge="1" parent="1" source="users" target="user_credentials" value="1 : 0..1" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERzeroToOne;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="users" target="household_members" value="memberships" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="households" target="household_members" value="members" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="households" target="household_invitations" value="invitations" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;strokeColor=#9673a6;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="household_members" target="household_invitations" value="invited by" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;strokeColor=#9673a6;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="household_members" target="auth_sessions" value="sessions" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="households" target="merchants" value="merchants" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="household_members" target="payment_methods" value="owns" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;strokeColor=#d6b656;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="household_members" target="income_entries" value="received by" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;strokeColor=#82b366;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="payment_methods" target="income_entries" value="optional destination" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;strokeColor=#82b366;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="households" target="receipts" value="receipts" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;strokeColor=#b85450;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="merchants" target="receipts" value="optional merchant" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;strokeColor=#9673a6;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="household_members" target="receipts" value="created by" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;strokeColor=#b85450;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e14" edge="1" parent="1" source="receipts" target="receipt_items" value="items" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;strokeColor=#d79b00;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e15" edge="1" parent="1" source="receipts" target="receipt_payments" value="payments" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;strokeColor=#d6b656;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e16" edge="1" parent="1" source="payment_methods" target="receipt_payments" value="method used" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;strokeColor=#d6b656;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e17" edge="1" parent="1" source="household_members" target="receipt_payments" value="paid by" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;strokeColor=#d6b656;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e18" edge="1" parent="1" source="receipts" target="audit_events" value="events" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=ERmany;strokeColor=#82b366;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e19" edge="1" parent="1" source="receipts" target="reconciliation" value="derived" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;endArrow=open;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e20" edge="1" parent="1" source="receipt_items" target="reconciliation" value="SUM lines" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;endArrow=open;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e21" edge="1" parent="1" source="receipt_payments" target="reconciliation" value="SUM payments" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;endArrow=open;"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

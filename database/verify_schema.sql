@@ -13,6 +13,21 @@ RETURNING id AS test_household_id \gset
 INSERT INTO household_members (household_id, user_id, role)
 VALUES (:'test_household_id', :'test_user_id', 'owner');
 
+SELECT
+    CASE WHEN is_active THEN 'true' ELSE 'false' END
+        AS active_membership_result
+FROM household_members
+WHERE household_id = :'test_household_id'
+  AND user_id = :'test_user_id'
+\gset
+
+\if :active_membership_result
+\echo 'Active household membership check passed.'
+\else
+\echo 'Active household membership check failed.'
+\quit 1
+\endif
+
 INSERT INTO merchants (household_id, name, normalized_name)
 VALUES (:'test_household_id', 'REWE', 'rewe')
 RETURNING id AS test_merchant_id \gset
@@ -30,6 +45,41 @@ VALUES (
     'cash'
 )
 RETURNING id AS test_payment_method_id \gset
+
+INSERT INTO user_credentials (user_id, password_hash)
+VALUES (:'test_user_id', '$argon2id$schema-verification-placeholder');
+
+INSERT INTO auth_sessions (
+    household_id,
+    user_id,
+    token_hash,
+    expires_at
+)
+VALUES (
+    :'test_household_id',
+    :'test_user_id',
+    repeat('a', 64),
+    now() + interval '1 hour'
+)
+RETURNING id AS test_auth_session_id \gset
+
+INSERT INTO household_invitations (
+    household_id,
+    email,
+    role,
+    token_hash,
+    invited_by_user_id,
+    expires_at
+)
+VALUES (
+    :'test_household_id',
+    'invited-schema-verify@example.test',
+    'member',
+    repeat('b', 64),
+    :'test_user_id',
+    now() + interval '7 days'
+)
+RETURNING id AS test_invitation_id \gset
 
 INSERT INTO income_entries (
     household_id,
@@ -118,6 +168,36 @@ WHERE receipt_id = :'test_receipt_id'
 \echo 'Receipt reconciliation check passed.'
 \else
 \echo 'Receipt reconciliation check failed.'
+\quit 1
+\endif
+
+SELECT
+    CASE WHEN role = 'member'
+              AND accepted_at IS NULL
+              AND expires_at > now()
+        THEN 'true' ELSE 'false' END AS invitation_result
+FROM household_invitations
+WHERE id = :'test_invitation_id'
+\gset
+
+\if :invitation_result
+\echo 'Household invitation check passed.'
+\else
+\echo 'Household invitation check failed.'
+\quit 1
+\endif
+
+SELECT
+    CASE WHEN expires_at > now() THEN 'true' ELSE 'false' END
+        AS auth_session_result
+FROM auth_sessions
+WHERE id = :'test_auth_session_id'
+\gset
+
+\if :auth_session_result
+\echo 'Authentication session check passed.'
+\else
+\echo 'Authentication session check failed.'
 \quit 1
 \endif
 

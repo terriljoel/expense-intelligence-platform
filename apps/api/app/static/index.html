@@ -9,16 +9,62 @@
     <script src="/static/app.js" defer></script>
   </head>
   <body>
+    <section id="login-view" class="login-screen">
+      <div class="login-card">
+        <span class="brand-mark">€</span>
+        <p class="eyebrow">Expense Intelligence</p>
+        <h1>Welcome back</h1>
+        <p class="muted">Sign in to your household.</p>
+        <div id="login-error" class="notice error" role="alert" hidden></div>
+        <form id="login-form" class="compact-form">
+          <label>Email<input name="email" type="email" autocomplete="username" required /></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" maxlength="128" required /></label>
+          <button class="primary" type="submit">Sign in</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="invitation-view" class="login-screen" hidden>
+      <div class="login-card">
+        <span class="brand-mark">€</span>
+        <p class="eyebrow">Household invitation</p>
+        <h1>Join the household</h1>
+        <p id="invitation-summary" class="muted">Checking invitation…</p>
+        <div id="invitation-error" class="notice error" role="alert" hidden></div>
+        <form id="invitation-accept-form" class="compact-form" hidden>
+          <label>Display name<input name="display_name" maxlength="200" autocomplete="name" required /></label>
+          <label>Password<input name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required /></label>
+          <label>Repeat password<input name="password_confirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" required /></label>
+          <button class="primary" type="submit">Create account</button>
+        </form>
+        <form id="invitation-existing-form" class="compact-form" hidden>
+          <p class="muted">This email already has an account. Sign in to join this additional household.</p>
+          <label>Email<input name="email" type="email" autocomplete="username" readonly required /></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" maxlength="128" required /></label>
+          <button class="primary" type="submit">Sign in and join</button>
+        </form>
+        <button id="invitation-back" class="text-button" type="button">Back to login</button>
+      </div>
+    </section>
+
+    <div id="app-shell" hidden>
     <header class="topbar">
       <a class="brand" href="#receipts" aria-label="Expense Intelligence home">
         <span class="brand-mark">€</span>
-        <span><strong>Expense Intelligence</strong><small>Local household</small></span>
+        <span><strong>Expense Intelligence</strong><small id="active-household-name">Local household</small></span>
       </a>
+      <div class="household-controls">
+        <label for="household-selector">Household</label>
+        <select id="household-selector" aria-label="Active household"></select>
+        <button id="create-household-button" class="nav-button" type="button" title="Create another household">+ New</button>
+      </div>
       <nav aria-label="Main navigation">
         <button class="nav-button active" data-view="receipts">Receipts</button>
         <button class="nav-button" data-view="income">Income</button>
+        <button class="nav-button" data-view="members">Members</button>
         <button class="nav-button" data-view="settings">Setup</button>
         <a class="nav-link" href="/docs" target="_blank">API</a>
+        <button id="logout-button" class="nav-button">Logout</button>
       </nav>
     </header>
 
@@ -155,6 +201,44 @@
           </section>
         </div>
       </section>
+
+      <section id="members-view" class="view" hidden>
+        <div class="page-heading">
+          <div><p class="eyebrow">Household</p><h1>Members</h1></div>
+          <button id="leave-household-button" class="danger" type="button">Leave household</button>
+        </div>
+        <section id="household-settings-card" class="card">
+          <div class="section-heading"><h2>Household settings</h2><span class="muted">Owner and admin</span></div>
+          <form id="household-settings-form" class="inline-fields">
+            <label>Name<input name="name" maxlength="200" required /></label>
+            <label>Default currency<input name="default_currency" minlength="3" maxlength="3" pattern="[A-Za-z]{3}" required /></label>
+            <button class="primary" type="submit">Save settings</button>
+          </form>
+        </section>
+        <div class="two-column">
+          <section class="card">
+            <div class="section-heading"><h2>People</h2><span id="member-count" class="muted"></span></div>
+            <p class="muted">Everyone listed here can see the shared household receipts and income.</p>
+            <div id="member-list" class="setting-list"></div>
+          </section>
+          <section id="invitation-admin-card" class="card">
+            <h2>Invite someone</h2>
+            <p class="muted">Create a single-use link that expires automatically.</p>
+            <form id="invitation-create-form" class="compact-form">
+              <label>Email<input name="email" type="email" maxlength="320" required /></label>
+              <label>Role<select name="role"><option value="member">Member</option><option value="admin">Admin</option></select></label>
+              <button class="primary" type="submit">Create invitation</button>
+            </form>
+            <div id="invitation-link-box" class="invite-link-box" hidden>
+              <label>Share this link<input id="invitation-link" readonly /></label>
+              <button id="copy-invitation-link" class="secondary" type="button">Copy link</button>
+            </div>
+            <div class="section-heading pending-heading"><h2>Pending</h2></div>
+            <div id="pending-invitation-list" class="setting-list"></div>
+          </section>
+        </div>
+      </section>
     </main>
+    </div>
   </body>
 </html>

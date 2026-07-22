@@ -5,8 +5,9 @@ FastAPI serves both the JSON API and a small phone-friendly web interface, so
 there is no separate Node.js frontend to install or run.
 
 The web interface supports receipts, receipt items, payments, reconciliation,
-approval, income entries, merchants, payment methods, and a simple household
-balance. Dashboard totals currently summarize the default EUR currency.
+approval, income entries, merchants, payment methods, household invitations,
+and a simple household balance. Dashboard totals currently summarize the
+default EUR currency.
 
 ## Start the application
 
@@ -51,11 +52,15 @@ activate_venv.bat
 cd apps\api
 python -m alembic upgrade head
 python -m app.db.seed
+python -m app.db.set_owner_password --email your-email@example.com
 ```
 
 - `python -m` runs an installed Python module.
 - `alembic upgrade head` applies every pending database migration.
 - `app.db.seed` creates the local owner, household, and membership when needed.
+- `app.db.set_owner_password` securely prompts for the owner's password, stores
+  only its Argon2 hash, and revokes older login sessions. Run it once initially
+  and again whenever the password must be changed.
 
 ### 4. Start FastAPI
 
@@ -86,9 +91,56 @@ connected to the same Wi-Fi network as the computer.
    the computer's real IPv4 address.
 4. If Windows asks about firewall access, allow Python on **Private networks**.
 
-This local version uses the seeded single owner/admin automatically. Real login
-and additional household users can be added later without changing the receipt
-domain model.
+This version uses local email/password authentication. The session is stored
+server-side and the browser receives only an HTTP-only random session token.
+
+## Add another household user
+
+1. Sign in as the household owner or an admin.
+2. Open **Members**.
+3. Enter the new user's email, choose `member` or `admin`, and select
+   **Create invitation**.
+4. Copy the displayed link and send it privately to that person.
+5. They open the link, enter their name and a password of at least 12
+   characters, then sign in.
+
+The raw invitation token appears only in the newly generated link; PostgreSQL
+stores its SHA-256 hash. Invitations expire after seven days by default. Change
+`INVITATION_HOURS` in `.env` if a different local expiry is needed. All
+household members see shared receipts and income, while payment methods remain
+owned by individual users. Only owners and admins can manage invitations.
+
+### Work with multiple households
+
+The household selector in the header controls the active household. Every
+receipt, income entry, merchant, payment method, member list, and invitation is
+loaded using that active household's ID.
+
+- Select another household to switch without signing out.
+- Select **+ New** to create another household; the creator becomes its owner.
+- An existing user can open an invitation link, sign in, and join an additional
+  household without creating another account.
+
+Switching updates the server-side session only after PostgreSQL confirms that
+the signed-in user is a member of the requested household. Data is reloaded
+after the switch, preventing records from the previous household from remaining
+on screen.
+
+### Manage a household
+
+Open **Members** to rename the active household, change its default currency,
+change roles, remove another member, or leave. Owners and admins can manage
+settings and members; only an owner can grant owner access or change an owner's
+role. The final owner cannot be demoted, removed, or leave until another owner
+has been promoted.
+
+Member removal deactivates access and revokes that household's sessions.
+Historical receipts, income, payments, and audit records remain visible with
+the original person's display name.
+
+Phone access currently uses plain HTTP on the private Wi-Fi network. Do not
+expose port 8000 to the public internet. Before internet deployment, add HTTPS,
+set `SESSION_COOKIE_SECURE=true`, and add login rate limiting.
 
 ## Run checks
 

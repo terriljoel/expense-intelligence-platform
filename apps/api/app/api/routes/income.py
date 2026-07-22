@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import CurrentPrincipal, get_current_principal
 from app.db.session import get_db_session
+from app.models import IncomeEntry, User
 from app.schemas.income import IncomeCreate, IncomeResponse, IncomeUpdate
 from app.services.income import (
     IncomeDestinationMethodNotFoundError,
@@ -18,6 +19,19 @@ from app.services.income import (
 
 
 router = APIRouter(prefix="/income", tags=["income"])
+
+
+def _income_response(
+    session: Session, entry: IncomeEntry
+) -> IncomeResponse:
+    receiver = session.get(User, entry.received_by_user_id)
+    return IncomeResponse.model_validate(entry).model_copy(
+        update={
+            "received_by_display_name": (
+                receiver.display_name if receiver is not None else None
+            )
+        }
+    )
 
 
 @router.post("", response_model=IncomeResponse, status_code=status.HTTP_201_CREATED)
@@ -38,7 +52,7 @@ def post_income(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Active destination payment method not found",
         ) from exc
-    return IncomeResponse.model_validate(entry)
+    return _income_response(session, entry)
 
 
 @router.get("", response_model=list[IncomeResponse])
@@ -54,7 +68,7 @@ def get_income_entries(
         limit=limit,
         offset=offset,
     )
-    return [IncomeResponse.model_validate(entry) for entry in entries]
+    return [_income_response(session, entry) for entry in entries]
 
 
 @router.get("/{income_id}", response_model=IncomeResponse)
@@ -74,7 +88,7 @@ def get_income_by_id(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Income entry not found",
         ) from exc
-    return IncomeResponse.model_validate(entry)
+    return _income_response(session, entry)
 
 
 @router.patch("/{income_id}", response_model=IncomeResponse)
@@ -101,7 +115,7 @@ def patch_income(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Active destination payment method not found",
         ) from exc
-    return IncomeResponse.model_validate(entry)
+    return _income_response(session, entry)
 
 
 @router.delete("/{income_id}", status_code=status.HTTP_204_NO_CONTENT)

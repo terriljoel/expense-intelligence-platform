@@ -3,19 +3,26 @@
 PostgreSQL 16 is the source of truth. SQLAlchemy maps the tables, Alembic tracks
 schema versions, and FastAPI opens one transaction per request.
 
+The current editable ER diagram is
+`diagrams/expense-intelligence-multi-user.drawio`. It includes receipts, income,
+credentials, server-side authentication sessions, and household invitations.
+
 ## Current Milestone 1 schema
 
 | Object | Purpose |
 |---|---|
 | `users` | Application identity; the local owner is currently seeded |
 | `households` | Tenant and currency boundary |
-| `household_members` | User-to-household membership and role |
+| `household_members` | User-to-household role and active-access state |
 | `merchants` | Household-scoped merchant names |
 | `payment_methods` | User-owned cash, card, transfer, or wallet method |
 | `receipts` | Receipt header, lifecycle, total, source, and image metadata |
 | `receipt_items` | Ordered product, discount, fee, tax, or adjustment lines |
 | `receipt_payments` | One or more payment allocations for a receipt |
 | `income_entries` | Positive household income received by a member |
+| `user_credentials` | Argon2 password hash for a local-login user |
+| `auth_sessions` | Revocable, expiring server-side login sessions |
+| `household_invitations` | Expiring invitations for a new admin or member |
 | `audit_events` | Immutable, deterministically ordered receipt history |
 | `receipt_reconciliation` | View comparing stated, item, and payment totals |
 
@@ -25,10 +32,18 @@ cross-household references. Receipt approval also locks the receipt row and is
 allowed only when it has items, payments, and both totals equal `stated_total`.
 Audit events cannot be updated or deleted.
 
-Expense allocation between household members is intentionally deferred. The
-current owner pays the recorded receipt. The existing membership and
-user-scoped payment design supports adding the second user later without
-redesigning receipt ownership.
+All members of a household can see its receipts and income. Payment methods
+remain user-owned, and each receipt payment records both the paying user and
+their method. Owners and admins can create or cancel household invitations.
+Only an SHA-256 hash of an invitation token is stored in PostgreSQL.
+
+A user may have rows in `household_members` for several households. The active
+`auth_sessions.household_id` selects exactly one of those memberships for an
+API session. Switching households changes that value only after membership is
+verified; all domain queries continue to filter by the active household ID.
+Removing or leaving sets `is_active = false` and revokes sessions instead of
+deleting the membership. This preserves receipt, income, payment, and audit
+foreign keys. A later invitation can reactivate the same membership.
 
 ## Start and initialize a new local database
 
