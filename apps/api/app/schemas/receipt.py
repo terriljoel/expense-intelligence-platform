@@ -28,6 +28,51 @@ class ReceiptCreate(BaseModel):
         return cleaned or None
 
 
+class ReceiptUpdate(BaseModel):
+    merchant_id: UUID | None = None
+    purchase_date: date | None = None
+    currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    stated_total: Decimal | None = Field(
+        default=None,
+        ge=0,
+        max_digits=14,
+        decimal_places=2,
+    )
+    notes: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("notes")
+    @classmethod
+    def clean_notes(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def require_valid_change(self) -> Self:
+        if not self.model_fields_set:
+            raise ValueError("At least one field must be supplied")
+        for required_field in ("purchase_date", "currency", "stated_total"):
+            if (
+                required_field in self.model_fields_set
+                and getattr(self, required_field) is None
+            ):
+                raise ValueError(f"{required_field} cannot be null")
+        return self
+
+
+class ReceiptVoidRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def clean_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split())
+        return cleaned or None
+
+
 class ReceiptResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -113,6 +158,68 @@ class ReceiptItemResponse(BaseModel):
     line_total: Decimal
     created_at: datetime
     updated_at: datetime
+
+
+class ReceiptItemUpdate(BaseModel):
+    position: int | None = Field(default=None, gt=0)
+    line_type: ReceiptLineType | None = None
+    raw_description: str | None = Field(default=None, max_length=500)
+    description: str | None = Field(default=None, min_length=1, max_length=500)
+    raw_quantity_text: str | None = Field(default=None, max_length=100)
+    quantity: Decimal | None = Field(
+        default=None,
+        gt=0,
+        max_digits=12,
+        decimal_places=3,
+    )
+    unit_price: Decimal | None = Field(
+        default=None,
+        ge=0,
+        max_digits=14,
+        decimal_places=4,
+    )
+    line_total: Decimal | None = Field(
+        default=None,
+        max_digits=14,
+        decimal_places=2,
+    )
+
+    @field_validator("description")
+    @classmethod
+    def clean_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("Item description cannot be blank")
+        return cleaned
+
+    @model_validator(mode="after")
+    def require_valid_change(self) -> Self:
+        if not self.model_fields_set:
+            raise ValueError("At least one field must be supplied")
+        for required_field in (
+            "position",
+            "line_type",
+            "description",
+            "line_total",
+        ):
+            if (
+                required_field in self.model_fields_set
+                and getattr(self, required_field) is None
+            ):
+                raise ValueError(f"{required_field} cannot be null")
+        if self.line_type is not None and self.line_total is not None:
+            if self.line_type == "discount" and self.line_total > 0:
+                raise ValueError("Discount line totals must be non-positive")
+            if (
+                self.line_type in {"product", "deposit", "fee", "tax"}
+                and self.line_total < 0
+            ):
+                raise ValueError(
+                    f"{self.line_type} line totals must be non-negative"
+                )
+        return self
 
 
 class AuditEventResponse(BaseModel):

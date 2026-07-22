@@ -10,21 +10,29 @@ from app.schemas.receipt import (
     ReceiptCreate,
     ReceiptItemCreate,
     ReceiptItemResponse,
+    ReceiptItemUpdate,
     ReceiptResponse,
+    ReceiptUpdate,
+    ReceiptVoidRequest,
 )
 from app.schemas.payment import (
     ReceiptPaymentCreate,
     ReceiptPaymentResponse,
+    ReceiptPaymentUpdate,
     ReceiptReconciliationResponse,
 )
 from app.services.receipt import (
     MerchantNotFoundError,
     PaymentMethodNotFoundError,
     ReceiptItemPositionConflictError,
+    ReceiptItemAmountError,
+    ReceiptItemNotFoundError,
     ReceiptNotEditableError,
     ReceiptNotFoundError,
     ReceiptNotReconciledError,
+    ReceiptNotVoidableError,
     ReceiptPaymentConflictError,
+    ReceiptPaymentNotFoundError,
     add_receipt_item,
     add_receipt_payment,
     approve_receipt,
@@ -35,6 +43,12 @@ from app.services.receipt import (
     list_receipt_payments,
     list_receipts,
     reconcile_receipt,
+    remove_receipt_item,
+    remove_receipt_payment,
+    update_receipt,
+    update_receipt_item,
+    update_receipt_payment,
+    void_receipt,
 )
 
 
@@ -108,6 +122,39 @@ def get_receipt_by_id(
     return ReceiptResponse.model_validate(receipt)
 
 
+@router.patch("/{receipt_id}", response_model=ReceiptResponse)
+def patch_receipt(
+    receipt_id: UUID,
+    payload: ReceiptUpdate,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    session: Session = Depends(get_db_session),
+) -> ReceiptResponse:
+    try:
+        receipt = update_receipt(
+            session,
+            household_id=principal.household_id,
+            receipt_id=receipt_id,
+            actor_user_id=principal.user_id,
+            changes=payload.model_dump(exclude_unset=True),
+        )
+    except ReceiptNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Receipt not found",
+        ) from exc
+    except MerchantNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Merchant not found in this household",
+        ) from exc
+    except ReceiptNotEditableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only draft receipts can be edited",
+        ) from exc
+    return ReceiptResponse.model_validate(receipt)
+
+
 @router.post(
     "/{receipt_id}/items",
     response_model=ReceiptItemResponse,
@@ -177,6 +224,89 @@ def get_receipt_items(
     return [ReceiptItemResponse.model_validate(item) for item in items]
 
 
+@router.patch(
+    "/{receipt_id}/items/{item_id}",
+    response_model=ReceiptItemResponse,
+)
+def patch_receipt_item(
+    receipt_id: UUID,
+    item_id: UUID,
+    payload: ReceiptItemUpdate,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    session: Session = Depends(get_db_session),
+) -> ReceiptItemResponse:
+    try:
+        item = update_receipt_item(
+            session,
+            household_id=principal.household_id,
+            receipt_id=receipt_id,
+            item_id=item_id,
+            actor_user_id=principal.user_id,
+            changes=payload.model_dump(exclude_unset=True),
+        )
+    except ReceiptNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Receipt not found",
+        ) from exc
+    except ReceiptItemNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Receipt item not found",
+        ) from exc
+    except ReceiptNotEditableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only draft receipts can be edited",
+        ) from exc
+    except ReceiptItemPositionConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Receipt item position already exists",
+        ) from exc
+    except ReceiptItemAmountError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Line type and line total have an invalid sign",
+        ) from exc
+    return ReceiptItemResponse.model_validate(item)
+
+
+@router.delete(
+    "/{receipt_id}/items/{item_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_receipt_item(
+    receipt_id: UUID,
+    item_id: UUID,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    session: Session = Depends(get_db_session),
+) -> None:
+    try:
+        remove_receipt_item(
+            session,
+            household_id=principal.household_id,
+            receipt_id=receipt_id,
+            item_id=item_id,
+            actor_user_id=principal.user_id,
+        )
+    except ReceiptNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Receipt not found",
+        ) from exc
+    except ReceiptItemNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Receipt item not found",
+        ) from exc
+    except ReceiptNotEditableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only draft receipts can be edited",
+        ) from exc
+
+
 @router.post(
     "/{receipt_id}/payments",
     response_model=ReceiptPaymentResponse,
@@ -244,6 +374,89 @@ def get_receipt_payments(
     return [
         ReceiptPaymentResponse.model_validate(payment) for payment in payments
     ]
+
+
+@router.patch(
+    "/{receipt_id}/payments/{payment_id}",
+    response_model=ReceiptPaymentResponse,
+)
+def patch_receipt_payment(
+    receipt_id: UUID,
+    payment_id: UUID,
+    payload: ReceiptPaymentUpdate,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    session: Session = Depends(get_db_session),
+) -> ReceiptPaymentResponse:
+    try:
+        payment = update_receipt_payment(
+            session,
+            household_id=principal.household_id,
+            receipt_id=receipt_id,
+            payment_id=payment_id,
+            user_id=principal.user_id,
+            changes=payload.model_dump(exclude_unset=True),
+        )
+    except ReceiptNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Receipt not found",
+        ) from exc
+    except ReceiptPaymentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Receipt payment not found",
+        ) from exc
+    except PaymentMethodNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Active payment method not found",
+        ) from exc
+    except ReceiptNotEditableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only draft receipts can be edited",
+        ) from exc
+    except ReceiptPaymentConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payment method already used for this receipt",
+        ) from exc
+    return ReceiptPaymentResponse.model_validate(payment)
+
+
+@router.delete(
+    "/{receipt_id}/payments/{payment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_receipt_payment(
+    receipt_id: UUID,
+    payment_id: UUID,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    session: Session = Depends(get_db_session),
+) -> None:
+    try:
+        remove_receipt_payment(
+            session,
+            household_id=principal.household_id,
+            receipt_id=receipt_id,
+            payment_id=payment_id,
+            user_id=principal.user_id,
+        )
+    except ReceiptNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Receipt not found",
+        ) from exc
+    except ReceiptPaymentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Receipt payment not found",
+        ) from exc
+    except ReceiptNotEditableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only draft receipts can be edited",
+        ) from exc
 
 
 @router.get(
@@ -325,4 +538,32 @@ def post_receipt_approval(
             detail="Receipt items and payments do not reconcile",
         ) from exc
 
+    return ReceiptResponse.model_validate(receipt)
+
+
+@router.post("/{receipt_id}/void", response_model=ReceiptResponse)
+def post_receipt_void(
+    receipt_id: UUID,
+    payload: ReceiptVoidRequest,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    session: Session = Depends(get_db_session),
+) -> ReceiptResponse:
+    try:
+        receipt = void_receipt(
+            session,
+            household_id=principal.household_id,
+            receipt_id=receipt_id,
+            actor_user_id=principal.user_id,
+            reason=payload.reason,
+        )
+    except ReceiptNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Receipt not found",
+        ) from exc
+    except ReceiptNotVoidableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Receipt cannot be voided from its current status",
+        ) from exc
     return ReceiptResponse.model_validate(receipt)

@@ -9,6 +9,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     String,
     Text,
     UniqueConstraint,
@@ -50,6 +51,17 @@ class PaymentMethod(Base):
         CheckConstraint(
             "last_four IS NULL OR last_four ~ '^[0-9]{4}$'",
             name="payment_methods_last_four_valid",
+        ),
+        Index(
+            "payment_methods_active_identity_unique",
+            "household_id",
+            "user_id",
+            text("lower(btrim(name))"),
+            "method_type",
+            text("lower(btrim(COALESCE(provider, '')))"),
+            text("COALESCE(last_four, '')"),
+            unique=True,
+            postgresql_where=text("is_active"),
         ),
     )
 
