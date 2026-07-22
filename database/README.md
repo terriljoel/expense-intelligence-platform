@@ -59,9 +59,10 @@ Get-Content -Raw database/migrations/001_initial_schema.sql |
     docker compose exec -T db psql -v ON_ERROR_STOP=1 -U expense_app -d expense_intelligence
 ```
 
-Do not apply `002` or `003` manually when Alembic is used; `alembic upgrade
-head` applies them. The numbered SQL copies are retained as readable PostgreSQL
-artifacts.
+Do not apply `002` or any later SQL file manually when Alembic is used;
+`alembic upgrade head` applies those changes. Alembic revisions are the
+executable source of truth. The numbered SQL copies are retained only as
+readable PostgreSQL artifacts.
 
 Seed the local owner, household, and cash payment method:
 

@@ -14,6 +14,15 @@ def test_health_live() -> None:
     assert response.json() == {"status": "alive"}
 
 
+def test_web_app_is_served() -> None:
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Expense Intelligence" in response.text
+    assert "/static/app.js" in response.text
+
+
 def test_health_ready() -> None:
     with TestClient(app) as client:
         response = client.get("/health/ready")
