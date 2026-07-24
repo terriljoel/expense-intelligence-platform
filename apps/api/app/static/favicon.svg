@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Expense Intelligence">
+  <rect width="64" height="64" rx="16" fill="#18392b"/>
+  <circle cx="32" cy="32" r="18" fill="#f6f1e6"/>
+  <path d="M23 24h18v4H23zm0 8h18v4H23zm0 8h12v4H23z" fill="#18392b"/>
+  <path d="M40 22l-6 20h4l1.3-4.5H43L44.4 42h4l-6-20zm-.1 10.5 1.9-6.4 1.9 6.4z" fill="#d7a83d"/>
+</svg>
