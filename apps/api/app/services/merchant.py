@@ -17,17 +17,27 @@ def normalize_merchant_name(name: str) -> str:
     return unicodedata.normalize("NFKC", cleaned).casefold()
 
 
+def normalize_merchant_address(address: str | None) -> str:
+    if not address:
+        return ""
+    cleaned = " ".join(address.split())
+    return unicodedata.normalize("NFKC", cleaned).casefold()
+
+
 def create_merchant(
     session: Session,
     *,
     household_id: UUID,
     name: str,
+    address: str | None = None,
 ) -> Merchant:
     normalized_name = normalize_merchant_name(name)
+    normalized_address = normalize_merchant_address(address)
     existing = session.scalar(
         select(Merchant).where(
             Merchant.household_id == household_id,
             Merchant.normalized_name == normalized_name,
+            Merchant.normalized_address == normalized_address,
         )
     )
     if existing is not None:
@@ -37,6 +47,8 @@ def create_merchant(
         household_id=household_id,
         name=" ".join(name.split()),
         normalized_name=normalized_name,
+        address=" ".join(address.split()) if address else None,
+        normalized_address=normalized_address,
     )
     session.add(merchant)
 

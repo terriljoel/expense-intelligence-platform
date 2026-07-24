@@ -17,6 +17,9 @@ const state = {
   invitationExistingAccount: false,
   households: [],
   currentHousehold: null,
+  capture: null,
+  maintenance: null,
+  dashboard: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -27,17 +30,21 @@ const money = (value, currency = "EUR") => new Intl.NumberFormat("en-DE", { styl
 const formatDate = (value) => new Intl.DateTimeFormat("en-DE", { dateStyle: "medium" }).format(new Date(`${value}T00:00:00`));
 const formatTime = (value) => new Intl.DateTimeFormat("en-DE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 const titleCase = (value) => String(value).replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+const expenseCategories = ["groceries", "rent", "health_insurance", "transport", "university_fees", "utilities", "subscriptions", "dining", "shopping", "travel", "other"];
+const incomeCategories = ["salary_payslip", "freelance", "interest", "gift", "refund", "benefits", "other"];
 
 async function api(path, options = {}) {
+  const isFormData = options.body instanceof FormData;
   const response = await fetch(path, {
     ...options,
-    headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers },
+    headers: { ...(options.body && !isFormData ? { "Content-Type": "application/json" } : {}), ...options.headers },
   });
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
     try {
       const body = await response.json();
       if (typeof body.detail === "string") message = body.detail;
+      if (body.detail && typeof body.detail === "object" && body.detail.message) message = `${body.detail.message}${body.detail.reason ? `: ${body.detail.reason}` : ""}`;
       if (Array.isArray(body.detail)) message = body.detail.map((item) => item.msg).join(", ");
     } catch (_) { /* Use the fallback message. */ }
     const error = new Error(message);
@@ -119,6 +126,75 @@ function clearHouseholdData() {
   state.members = [];
   state.invitations = [];
   state.currentHousehold = null;
+  state.capture = null;
+  state.dashboard = null;
+}
+
+function resetCaptureUi() {
+  state.capture = null;
+  const captureForm = $("#receipt-capture-form");
+  captureForm.reset();
+  captureForm.hidden = true;
+  $("#capture-review").hidden = true;
+  $("#capture-preview").hidden = true;
+  $("#capture-preview").removeAttribute("src");
+  $("#capture-merchant-hint").hidden = true;
+  $("#capture-duplicate-warning").hidden = true;
+  $("#open-duplicate-receipt").hidden = true;
+  $("#use-capture").disabled = false;
+  $("#receipt-create-form").elements.capture_id.value = "";
+}
+
+function renderCaptureReview() {
+  const capture = state.capture;
+  if (!capture) return;
+  $("#receipt-capture-form").hidden = true;
+  $("#capture-review").hidden = false;
+  $("#capture-image").src = `${capture.image_url}?v=${encodeURIComponent(capture.updated_at)}`;
+  $("#capture-status").textContent = capture.ocr_status === "succeeded" ? `Text read with ${titleCase(capture.ocr_provider || "OCR")}. Verify every value before saving.` : "OCR could not finish. You can retry or continue with manual values.";
+  $("#capture-suggestions").innerHTML = [
+    ["Merchant", capture.suggested_merchant_name || "Not detected"],
+    ["Address", capture.suggested_merchant_address || "Not detected"],
+    ["Date", capture.suggested_purchase_date || "Not detected"],
+    ["Total", capture.suggested_total ? money(capture.suggested_total, capture.suggested_currency || activeCurrency()) : "Not detected"],
+    ["Payment", capture.suggested_payment_reason || "Not detected"],
+    ["Receipt number", capture.suggested_receipt_number || "Not detected"],
+  ].map(([label, value]) => `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`).join("");
+  const error = $("#capture-error");
+  error.textContent = capture.ocr_error || "";
+  error.hidden = !capture.ocr_error;
+  $("#capture-raw-text").textContent = capture.ocr_raw_text || "No text was returned.";
+  $("#capture-raw-details").hidden = !capture.ocr_raw_text;
+  const duplicateWarning = $("#capture-duplicate-warning");
+  const strongDuplicate = capture.duplicate_match_level === "strong";
+  duplicateWarning.textContent = capture.duplicate_reason ? `${strongDuplicate ? "Duplicate detected" : "Possible duplicate"}: ${capture.duplicate_reason}` : "";
+  duplicateWarning.hidden = !capture.duplicate_reason;
+  $("#open-duplicate-receipt").hidden = !capture.possible_duplicate_receipt_id;
+  $("#use-capture").disabled = strongDuplicate;
+  $("#use-capture").textContent = strongDuplicate ? "Duplicate receipt blocked" : (capture.ocr_status === "succeeded" ? "Review and create draft" : "Enter values manually");
+}
+
+function useCaptureSuggestions() {
+  const capture = state.capture;
+  if (!capture) return;
+  const form = $("#receipt-create-form");
+  form.hidden = false;
+  form.elements.capture_id.value = capture.id;
+  form.elements.purchase_date.value = capture.suggested_purchase_date || today();
+  form.elements.stated_total.value = capture.suggested_total || "";
+  form.elements.currency.value = capture.suggested_currency || activeCurrency();
+  form.elements.payment_method_id.value = capture.suggested_payment_method_id || "";
+  form.elements.receipt_number.value = capture.suggested_receipt_number || "";
+  const ocrWords = `${capture.suggested_merchant_name || ""} ${capture.ocr_raw_text || ""}`.toLocaleLowerCase();
+  form.elements.category.value = /aldi|lidl|rewe|edeka|penny|netto|kaufland|supermarkt|grocery/.test(ocrWords) ? "groceries" : "other";
+  const normalizedMerchant = String(capture.suggested_merchant_name || "").trim().toLocaleLowerCase();
+  const normalizedAddress = String(capture.suggested_merchant_address || "").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+  const merchant = state.merchants.find((entry) => entry.normalized_name === normalizedMerchant && entry.normalized_address === normalizedAddress);
+  form.elements.merchant_id.value = merchant?.id || "";
+  const hint = $("#capture-merchant-hint");
+  hint.textContent = capture.suggested_merchant_name && !merchant ? `OCR read merchant “${capture.suggested_merchant_name}”. Select an existing merchant or add it under Settings.` : "This draft will retain the captured image and OCR evidence.";
+  hint.hidden = false;
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function loadHouseholds() {
@@ -136,7 +212,7 @@ async function activateHousehold(householdId) {
   clearHouseholdData();
   history.replaceState(null, "", location.pathname);
   showApp(user);
-  switchView("receipts");
+  switchView("dashboard");
   await loadAuthenticatedData();
 }
 
@@ -172,10 +248,32 @@ function activeCurrency() {
 function switchView(name) {
   $$(".view").forEach((view) => { view.hidden = view.id !== `${name}-view`; });
   $$(".nav-button").forEach((button) => button.classList.toggle("active", button.dataset.view === name));
-  if (name === "settings") renderSettings();
+  if (name === "settings") {
+    renderSettings();
+    loadMaintenance().catch((error) => notify(error.message, true));
+  }
   if (name === "income") renderIncome();
   if (name === "members") loadMembers().catch((error) => notify(error.message, true));
+  if (name === "dashboard") loadDashboard().catch((error) => notify(error.message, true));
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function loadMaintenance() {
+  const canAdminister = ["owner", "admin"].includes(state.user?.role);
+  const card = $("#maintenance-card");
+  card.hidden = !canAdminister;
+  if (!canAdminister) return;
+  state.maintenance = await api("/maintenance/preview");
+  const counts = state.maintenance.counts;
+  $("#maintenance-counts").innerHTML = [
+    ["Receipts", counts.receipts],
+    ["Receipt items", counts.receipt_items],
+    ["Payments", counts.receipt_payments],
+    ["Receipt images / OCR captures", counts.receipt_captures],
+    ["Income entries", counts.income_entries],
+    ["Audit events", counts.audit_events],
+  ].map(([label, count]) => `<div class="setting-item"><span>${label}</span><strong>${count}</strong></div>`).join("");
+  $("#reset-confirmation-phrase").textContent = state.maintenance.confirmation_phrase;
 }
 
 async function loadMembers() {
@@ -217,14 +315,24 @@ async function loadSetup() {
 }
 
 function renderSelects() {
+  $$('[data-expense-category]').forEach((select) => {
+    const selected = select.value || "other";
+    select.innerHTML = expenseCategories.map((category) => `<option value="${category}">${titleCase(category)}</option>`).join("");
+    select.value = selected;
+  });
+  $$('[data-income-category]').forEach((select) => {
+    const selected = select.value || "salary_payslip";
+    select.innerHTML = incomeCategories.map((category) => `<option value="${category}">${category === "salary_payslip" ? "Salary / Payslip" : titleCase(category)}</option>`).join("");
+    select.value = selected;
+  });
   $$('[data-merchant-select]').forEach((select) => {
     const selected = select.value;
-    select.innerHTML = `<option value="">No merchant</option>${state.merchants.map((merchant) => `<option value="${merchant.id}">${escapeHtml(merchant.name)}</option>`).join("")}`;
+    select.innerHTML = `<option value="">No merchant</option>${state.merchants.map((merchant) => `<option value="${merchant.id}">${escapeHtml(merchant.name)}${merchant.address ? ` — ${escapeHtml(merchant.address)}` : ""}</option>`).join("")}`;
     select.value = selected;
   });
   $$('[data-payment-select]').forEach((select) => {
     const selected = select.value;
-    const placeholder = select.name === "destination_payment_method_id" ? "Not specified" : "Choose method";
+    const placeholder = select.name === "destination_payment_method_id" ? "Not specified" : (select.closest("#receipt-create-form") ? "Add payment later" : "Choose method");
     select.innerHTML = `<option value="">${placeholder}</option>${state.methods.filter((method) => method.is_active).map((method) => `<option value="${method.id}">${escapeHtml(methodName(method.id))}</option>`).join("")}`;
     select.value = selected;
   });
@@ -238,6 +346,84 @@ async function loadIncomes() {
 async function loadReceipts() {
   state.receipts = await api("/receipts?limit=100");
   renderReceiptIndex();
+}
+
+function dashboardPeriod() {
+  const form = $("#dashboard-period-form");
+  return { year: Number(form.elements.year.value), month: Number(form.elements.month.value) };
+}
+
+async function loadDashboard() {
+  const { year, month } = dashboardPeriod();
+  if (!year || !month) return;
+  $("#dashboard-view").setAttribute("aria-busy", "true");
+  try {
+    state.dashboard = await api(`/dashboard?year=${year}&month=${month}`);
+    renderDashboard();
+  } finally {
+    $("#dashboard-view").removeAttribute("aria-busy");
+  }
+}
+
+function renderDashboard() {
+  const data = state.dashboard;
+  if (!data) return;
+  const monthName = new Intl.DateTimeFormat("en", { month: "long" }).format(new Date(data.year, data.month - 1, 1));
+  $("#dashboard-subtitle").textContent = `${monthName} ${data.year} · approved receipts · ${data.currency}`;
+  const change = data.month_change_percentage === null ? "No prior-month baseline" : `${Number(data.month_change_percentage) >= 0 ? "↑" : "↓"} ${Math.abs(Number(data.month_change_percentage))}% vs previous month`;
+  $("#dashboard-kpis").innerHTML = [
+    ["Spent this month", money(data.month_expense, data.currency), `${data.receipt_count} approved receipt${data.receipt_count === 1 ? "" : "s"} · ${change}`, "accent"],
+    ["Monthly balance", money(data.month_balance, data.currency), `${money(data.month_income, data.currency)} income`, ""],
+    ["Spent this year", money(data.year_expense, data.currency), `January to ${monthName}`, ""],
+    ["Average purchase", money(data.average_receipt, data.currency), `Largest ${money(data.largest_receipt, data.currency)}`, ""],
+  ].map(([label, value, meta, className]) => `<article class="kpi-card ${className}"><span class="kpi-label">${label}</span><strong class="kpi-value">${value}</strong><span class="kpi-meta">${meta}</span></article>`).join("");
+  const alerts = [];
+  if (data.draft_count) alerts.push(`${data.draft_count} draft receipt${data.draft_count === 1 ? " is" : "s are"} awaiting approval and not included.`);
+  if (data.excluded_currency_count) alerts.push(`${data.excluded_currency_count} approved receipt${data.excluded_currency_count === 1 ? " uses" : "s use"} another currency and is not combined.`);
+  const leadingCategory = data.categories[0];
+  const leadingMerchant = data.top_merchants_month[0];
+  const leadingProduct = data.top_products[0];
+  const insights = [
+    leadingCategory ? `<span><strong>${titleCase(leadingCategory.category)}</strong> is your largest category at ${money(leadingCategory.amount, data.currency)}.</span>` : "",
+    leadingMerchant ? `<span><strong>${escapeHtml(leadingMerchant.name)}</strong> is this month's top merchant.</span>` : "",
+    leadingProduct ? `<span><strong>${escapeHtml(titleCase(leadingProduct.description))}</strong> is your most frequently purchased product.</span>` : "",
+  ].filter(Boolean);
+  $("#dashboard-alerts").innerHTML = `${alerts.length ? `<div class="dashboard-note">${alerts.map(escapeHtml).join(" ")}</div>` : ""}${insights.length ? `<div class="insight-strip">${insights.join("")}</div>` : ""}`;
+  renderTrendChart(data);
+  renderCategoryChart(data);
+  renderMerchantChart();
+  renderProducts(data);
+}
+
+function renderTrendChart(data) {
+  const maximum = Math.max(1, ...data.monthly_trend.flatMap((point) => [Number(point.expense), Number(point.income)]));
+  $("#spending-trend-chart").innerHTML = `<div class="trend-bars">${data.monthly_trend.map((point) => `<div class="trend-month"><div class="trend-pair"><i class="trend-bar income" style="height:${Math.max(1, Number(point.income) / maximum * 100)}%" title="${point.label} income: ${money(point.income, data.currency)}"></i><i class="trend-bar expense" style="height:${Math.max(1, Number(point.expense) / maximum * 100)}%" title="${point.label} expense: ${money(point.expense, data.currency)}"></i></div><small>${point.label}</small></div>`).join("")}</div>`;
+}
+
+function renderCategoryChart(data) {
+  const colors = ["#1d5a40", "#4f8c68", "#76b38c", "#d89962", "#b77b43", "#6f7e75", "#a6b7aa", "#cabd79", "#8d6f9f", "#557f9c", "#c7d8cb"];
+  if (!data.categories.length) {
+    $("#category-chart").innerHTML = `<div class="chart-empty">No approved spending for this month.</div>`;
+    return;
+  }
+  let position = 0;
+  const segments = data.categories.map((entry, index) => {
+    const start = position; position += Number(entry.percentage);
+    return `${colors[index % colors.length]} ${start}% ${position}%`;
+  }).join(",");
+  $("#category-chart").innerHTML = `<div class="donut" style="background:conic-gradient(${segments})" aria-label="Spending category chart"></div><div class="category-legend">${data.categories.map((entry, index) => `<div class="category-row"><i style="background:${colors[index % colors.length]}"></i><span>${titleCase(entry.category)} <small class="muted">${entry.percentage}%</small></span><strong>${money(entry.amount, data.currency)}</strong></div>`).join("")}</div>`;
+}
+
+function renderMerchantChart() {
+  const data = state.dashboard;
+  if (!data) return;
+  const period = $("#merchant-period").value;
+  const merchants = period === "year" ? data.top_merchants_year : data.top_merchants_month;
+  $("#top-merchants-chart").innerHTML = merchants.length ? merchants.map((merchant, index) => `<div class="rank-item"><span class="rank-number">${index + 1}</span><span class="rank-copy"><strong>${escapeHtml(merchant.name)}</strong><small>${merchant.receipt_count} receipt${merchant.receipt_count === 1 ? "" : "s"}${merchant.address ? ` · ${escapeHtml(merchant.address)}` : ""}</small></span><strong>${money(merchant.amount, data.currency)}</strong></div>`).join("") : `<div class="chart-empty">No merchant spending in this period.</div>`;
+}
+
+function renderProducts(data) {
+  $("#top-products-table").innerHTML = data.top_products.length ? `<div class="product-row header"><span>Product</span><span>Times bought</span><span>Quantity</span><span>Spend</span></div>${data.top_products.map((product) => `<div class="product-row"><strong>${escapeHtml(titleCase(product.description))}</strong><span>${product.purchase_count}</span><span>${Number(product.quantity).toLocaleString()}</span><strong>${money(product.amount, data.currency)}</strong></div>`).join("")}` : `<div class="chart-empty">Approve receipts with line items to see product insights.</div>`;
 }
 
 function renderReceiptIndex() {
@@ -254,7 +440,7 @@ function renderReceiptIndex() {
 
   $("#receipt-list").innerHTML = state.receipts.length ? state.receipts.map((receipt) => `
     <button class="receipt-row" data-open-receipt="${receipt.id}">
-      <span class="line-copy"><strong>${escapeHtml(merchantName(receipt.merchant_id))}</strong><small>Created by ${escapeHtml(receipt.created_by_display_name || memberName(receipt.created_by_user_id))}</small></span>
+      <span class="line-copy"><strong>${escapeHtml(merchantName(receipt.merchant_id))}</strong><small>${titleCase(receipt.category)} · created by ${escapeHtml(receipt.created_by_display_name || memberName(receipt.created_by_user_id))}</small></span>
       <span class="receipt-date muted">${formatDate(receipt.purchase_date)}</span>
       <span class="receipt-amount">${money(receipt.stated_total, receipt.currency)}</span>
       <span class="status ${receipt.status}">${receipt.status}</span>
@@ -266,7 +452,7 @@ function renderIncome() {
   $("#income-total").textContent = `${money(total)} total`;
   $("#income-list").innerHTML = state.incomes.length ? state.incomes.map((entry) => `
     <div class="receipt-row">
-      <span class="line-copy"><strong>${escapeHtml(entry.source)}</strong><small>${titleCase(entry.income_type)} · received by ${escapeHtml(entry.received_by_display_name || memberName(entry.received_by_user_id))}${entry.destination_payment_method_id ? ` · ${escapeHtml(methodName(entry.destination_payment_method_id))}` : ""}</small></span>
+      <span class="line-copy"><strong>${escapeHtml(entry.source)}</strong><small>${entry.category === "salary_payslip" ? "Salary / Payslip" : titleCase(entry.category)} · received by ${escapeHtml(entry.received_by_display_name || memberName(entry.received_by_user_id))}${entry.destination_payment_method_id ? ` · ${escapeHtml(methodName(entry.destination_payment_method_id))}` : ""}</small></span>
       <span class="receipt-date muted">${formatDate(entry.received_date)}</span>
       <span class="receipt-amount">${money(entry.amount, entry.currency)}</span>
       <span class="line-actions"><button class="icon-button" data-edit-income="${entry.id}">Edit</button><button class="icon-button delete" data-delete-income="${entry.id}">Delete</button></span>
@@ -309,6 +495,8 @@ function renderReceiptDetail() {
   $("#detail-status").className = `status ${receipt.status}`;
   const form = $("#receipt-edit-form");
   form.elements.merchant_id.value = receipt.merchant_id || "";
+  form.elements.category.value = receipt.category || "other";
+  form.elements.receipt_number.value = receipt.receipt_number || "";
   form.elements.purchase_date.value = receipt.purchase_date;
   form.elements.stated_total.value = receipt.stated_total;
   form.elements.currency.value = receipt.currency;
@@ -362,7 +550,7 @@ async function refreshReceipt() {
 }
 
 function renderSettings() {
-  $("#merchant-list").innerHTML = state.merchants.length ? state.merchants.map((merchant) => `<div class="setting-item"><strong>${escapeHtml(merchant.name)}</strong><small class="muted">${formatTime(merchant.created_at)}</small></div>`).join("") : `<p class="muted">No merchants yet.</p>`;
+  $("#merchant-list").innerHTML = state.merchants.length ? state.merchants.map((merchant) => `<div class="setting-item"><div class="line-copy"><strong>${escapeHtml(merchant.name)}</strong><small>${escapeHtml(merchant.address || "No branch address")}</small></div><small class="muted">${formatTime(merchant.created_at)}</small></div>`).join("") : `<p class="muted">No merchants yet.</p>`;
   $("#method-list").innerHTML = state.methods.length ? state.methods.map((method) => `<div class="setting-item"><div class="line-copy"><strong>${escapeHtml(methodName(method.id))}</strong><small>${titleCase(method.method_type)}${method.provider ? ` · ${escapeHtml(method.provider)}` : ""}${method.is_active ? "" : " · Inactive"}</small></div>${method.is_active ? `<button class="icon-button delete" data-deactivate-method="${method.id}">Deactivate</button>` : ""}</div>`).join("") : `<p class="muted">No payment methods yet.</p>`;
 }
 
@@ -390,6 +578,13 @@ function resetIncomeForm() {
 }
 
 function bindEvents() {
+  const dashboardNow = new Date();
+  const periodForm = $("#dashboard-period-form");
+  periodForm.elements.month.innerHTML = Array.from({ length: 12 }, (_, index) => `<option value="${index + 1}">${new Intl.DateTimeFormat("en", { month: "long" }).format(new Date(2026, index, 1))}</option>`).join("");
+  periodForm.elements.year.innerHTML = Array.from({ length: 6 }, (_, index) => dashboardNow.getFullYear() + 1 - index).map((year) => `<option value="${year}">${year}</option>`).join("");
+  periodForm.elements.month.value = dashboardNow.getMonth() + 1;
+  periodForm.elements.year.value = dashboardNow.getFullYear();
+  $(".brand").addEventListener("click", (event) => { event.preventDefault(); switchView("dashboard"); });
   $("#invitation-back").addEventListener("click", () => { history.replaceState(null, "", location.pathname); showLogin(); });
   $("#invitation-accept-form").addEventListener("submit", async (event) => {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
@@ -462,8 +657,68 @@ function bindEvents() {
     if (created) await activateHousehold(created.household_id);
   });
   $$(".nav-button[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
-  $("#show-create-receipt").addEventListener("click", () => { $("#receipt-create-form").hidden = false; $("#receipt-create-form input[name=purchase_date]").value = today(); $("#receipt-create-form input[name=currency]").value = activeCurrency(); });
-  $("[data-cancel-create]").addEventListener("click", () => { $("#receipt-create-form").hidden = true; });
+  $("#dashboard-period-form").addEventListener("change", () => loadDashboard().catch((error) => notify(error.message, true)));
+  $("#merchant-period").addEventListener("change", renderMerchantChart);
+  $("#export-dashboard-csv").addEventListener("click", () => {
+    const { year, month } = dashboardPeriod();
+    window.location.assign(`/dashboard/export.csv?year=${year}&month=${month}`);
+  });
+  $("#print-dashboard").addEventListener("click", () => window.print());
+  $("#show-capture-receipt").addEventListener("click", () => {
+    $("#receipt-create-form").hidden = true;
+    $("#capture-review").hidden = true;
+    $("#receipt-capture-form").hidden = false;
+  });
+  $("#show-create-receipt").addEventListener("click", () => {
+    const form = $("#receipt-create-form");
+    form.elements.capture_id.value = "";
+    form.hidden = false;
+    form.elements.purchase_date.value = today();
+    form.elements.currency.value = activeCurrency();
+    $("#capture-merchant-hint").hidden = true;
+  });
+  $("[data-cancel-create]").addEventListener("click", () => {
+    $("#receipt-create-form").hidden = true;
+    if (state.capture) $("#capture-review").hidden = false;
+  });
+  $("[data-cancel-capture]").addEventListener("click", () => { $("#receipt-capture-form").hidden = true; });
+  $("#receipt-capture-form input[name=file]").addEventListener("change", (event) => {
+    const file = event.currentTarget.files?.[0];
+    const preview = $("#capture-preview");
+    if (!file) { preview.hidden = true; preview.removeAttribute("src"); return; }
+    preview.src = URL.createObjectURL(file);
+    preview.hidden = false;
+  });
+  $("#receipt-capture-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector("button[type=submit]");
+    button.disabled = true; button.textContent = "Reading receipt…";
+    try {
+      const uploaded = await run(() => api("/receipt-captures", { method: "POST", body: new FormData(form) }), null);
+      state.capture = await run(() => api(`/receipt-captures/${uploaded.id}/ocr`, { method: "POST" }), uploaded.ocr_status === "pending" ? "Receipt image uploaded" : null);
+      renderCaptureReview();
+    } catch (_) { /* run() already displayed the error. */ }
+    finally { button.disabled = false; button.textContent = "Upload and read text"; }
+  });
+  $("#retry-ocr").addEventListener("click", async () => {
+    if (!state.capture) return;
+    const result = await run(() => api(`/receipt-captures/${state.capture.id}/ocr`, { method: "POST" }), "OCR retried").catch(() => null);
+    if (result) { state.capture = result; renderCaptureReview(); }
+  });
+  $("#use-capture").addEventListener("click", useCaptureSuggestions);
+  $("#open-duplicate-receipt").addEventListener("click", async () => {
+    if (!state.capture?.possible_duplicate_receipt_id) return;
+    const duplicateReceiptId = state.capture.possible_duplicate_receipt_id;
+    resetCaptureUi();
+    switchView("receipts");
+    await openReceipt(duplicateReceiptId);
+  });
+  $("#discard-capture").addEventListener("click", async () => {
+    if (!state.capture || !confirm("Discard this captured image and OCR text?")) return;
+    const discarded = await run(() => api(`/receipt-captures/${state.capture.id}`, { method: "DELETE" }), "Capture discarded").catch(() => false);
+    if (discarded !== false) resetCaptureUi();
+  });
   $("#back-to-receipts").addEventListener("click", closeReceipt);
   $("[data-cancel-income]").addEventListener("click", resetIncomeForm);
 
@@ -474,13 +729,13 @@ function bindEvents() {
 
   $("#receipt-create-form").addEventListener("submit", async (event) => {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
-    const receipt = await run(() => api("/receipts", { method: "POST", body: JSON.stringify({ merchant_id: data.get("merchant_id") || null, purchase_date: data.get("purchase_date"), stated_total: data.get("stated_total"), currency: String(data.get("currency")).toUpperCase(), notes: data.get("notes") || null }) }), "Receipt created").catch(() => null);
-    if (receipt) { form.reset(); form.hidden = true; await loadReceipts(); await openReceipt(receipt.id); }
+    const receipt = await run(() => api("/receipts", { method: "POST", body: JSON.stringify({ capture_id: data.get("capture_id") || null, merchant_id: data.get("merchant_id") || null, payment_method_id: data.get("payment_method_id") || null, category: data.get("category"), receipt_number: data.get("receipt_number") || null, purchase_date: data.get("purchase_date"), stated_total: data.get("stated_total"), currency: String(data.get("currency")).toUpperCase(), notes: data.get("notes") || null }) }), "Receipt created").catch(() => null);
+    if (receipt) { form.reset(); form.hidden = true; resetCaptureUi(); await loadReceipts(); await openReceipt(receipt.id); }
   });
 
   $("#receipt-edit-form").addEventListener("submit", async (event) => {
     event.preventDefault(); const data = new FormData(event.currentTarget);
-    const receipt = await run(() => api(`/receipts/${state.receipt.id}`, { method: "PATCH", body: JSON.stringify({ merchant_id: data.get("merchant_id") || null, purchase_date: data.get("purchase_date"), stated_total: data.get("stated_total"), currency: String(data.get("currency")).toUpperCase(), notes: data.get("notes") || null }) }), "Receipt updated").catch(() => null);
+    const receipt = await run(() => api(`/receipts/${state.receipt.id}`, { method: "PATCH", body: JSON.stringify({ merchant_id: data.get("merchant_id") || null, category: data.get("category"), receipt_number: data.get("receipt_number") || null, purchase_date: data.get("purchase_date"), stated_total: data.get("stated_total"), currency: String(data.get("currency")).toUpperCase(), notes: data.get("notes") || null }) }), "Receipt updated").catch(() => null);
     if (receipt) await refreshReceipt();
   });
 
@@ -517,8 +772,33 @@ function bindEvents() {
   $("#approve-receipt").addEventListener("click", async () => { if (confirm("Approve this receipt? It can no longer be edited.")) { const result = await run(() => api(`/receipts/${state.receipt.id}/approve`, { method: "POST" }), "Receipt approved").catch(() => null); if (result) await refreshReceipt(); } });
   $("#void-receipt").addEventListener("click", async () => { const reason = prompt("Why is this receipt being voided? (optional)"); if (reason !== null) { const result = await run(() => api(`/receipts/${state.receipt.id}/void`, { method: "POST", body: JSON.stringify({ reason: reason || null }) }), "Receipt voided").catch(() => null); if (result) await refreshReceipt(); } });
 
-  $("#merchant-form").addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const name = new FormData(form).get("name"); const result = await run(() => api("/merchants", { method: "POST", body: JSON.stringify({ name }) }), "Merchant added").catch(() => null); if (result) { form.reset(); await loadSetup(); await loadReceipts(); } });
+  $("#merchant-form").addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const result = await run(() => api("/merchants", { method: "POST", body: JSON.stringify({ name: data.get("name"), address: data.get("address") || null }) }), "Merchant added").catch(() => null); if (result) { form.reset(); await loadSetup(); await loadReceipts(); } });
   $("#method-form").addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const result = await run(() => api("/payment-methods", { method: "POST", body: JSON.stringify({ name: data.get("name"), method_type: data.get("method_type"), provider: data.get("provider") || null, last_four: data.get("last_four") || null }) }), "Payment method added").catch(() => null); if (result) { form.reset(); await loadSetup(); } });
+  $("#refresh-maintenance-button").addEventListener("click", () => loadMaintenance().catch((error) => notify(error.message, true)));
+  $("#download-archive-button").addEventListener("click", () => {
+    window.location.assign("/maintenance/archive");
+  });
+  $("#household-reset-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const confirmation = String(new FormData(form).get("confirmation") || "");
+    if (!state.maintenance || confirmation !== state.maintenance.confirmation_phrase) {
+      notify("The confirmation phrase does not match", true);
+      return;
+    }
+    if (!confirm("Permanently delete this household's receipts, images, OCR data, income and audit history? Download an archive first if needed.")) return;
+    const result = await run(
+      () => api("/maintenance/reset", { method: "POST", body: JSON.stringify({ confirmation }) }),
+      "Household financial data reset",
+    ).catch(() => null);
+    if (result) {
+      form.reset();
+      clearHouseholdData();
+      await loadAuthenticatedData();
+      switchView("settings");
+      if (result.image_delete_failures) notify(`Data reset; ${result.image_delete_failures} image object(s) could not be removed`, true);
+    }
+  });
   $("#method-list").addEventListener("click", async (event) => { const target = event.target.closest("[data-deactivate-method]"); if (target && confirm("Deactivate this payment method? Existing receipt payments stay unchanged.")) { const result = await run(() => api(`/payment-methods/${target.dataset.deactivateMethod}/deactivate`, { method: "POST" }), "Payment method deactivated").catch(() => null); if (result) await loadSetup(); } });
 
   $("#invitation-create-form").addEventListener("submit", async (event) => {
@@ -587,14 +867,15 @@ function bindEvents() {
 
   $("#income-form").addEventListener("submit", async (event) => {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const editId = data.get("edit_id");
-    const payload = { source: data.get("source"), income_type: data.get("income_type"), received_date: data.get("received_date"), amount: data.get("amount"), currency: String(data.get("currency")).toUpperCase(), destination_payment_method_id: data.get("destination_payment_method_id") || null, notes: data.get("notes") || null };
+    const category = data.get("category");
+    const payload = { source: data.get("source"), category, income_type: category === "salary_payslip" ? "salary" : (["freelance", "interest", "gift", "refund"].includes(category) ? category : "other"), received_date: data.get("received_date"), amount: data.get("amount"), currency: String(data.get("currency")).toUpperCase(), destination_payment_method_id: data.get("destination_payment_method_id") || null, notes: data.get("notes") || null };
     const result = await run(() => api(editId ? `/income/${editId}` : "/income", { method: editId ? "PATCH" : "POST", body: JSON.stringify(payload) }), editId ? "Income updated" : "Income added").catch(() => null);
     if (result) { resetIncomeForm(); await loadIncomes(); renderReceiptIndex(); }
   });
 
   $("#income-list").addEventListener("click", async (event) => {
     const edit = event.target.closest("[data-edit-income]"); const remove = event.target.closest("[data-delete-income]");
-    if (edit) { const entry = state.incomes.find((item) => item.id === edit.dataset.editIncome); const form = $("#income-form"); form.elements.edit_id.value = entry.id; form.elements.source.value = entry.source; form.elements.income_type.value = entry.income_type; form.elements.received_date.value = entry.received_date; form.elements.amount.value = entry.amount; form.elements.currency.value = entry.currency; form.elements.destination_payment_method_id.value = entry.destination_payment_method_id || ""; form.elements.notes.value = entry.notes || ""; $("#income-form-title").textContent = "Edit income"; form.querySelector("button[type=submit]").textContent = "Save income"; $("[data-cancel-income]").hidden = false; form.scrollIntoView({ behavior: "smooth", block: "start" }); }
+    if (edit) { const entry = state.incomes.find((item) => item.id === edit.dataset.editIncome); const form = $("#income-form"); form.elements.edit_id.value = entry.id; form.elements.source.value = entry.source; form.elements.category.value = entry.category || "other"; form.elements.received_date.value = entry.received_date; form.elements.amount.value = entry.amount; form.elements.currency.value = entry.currency; form.elements.destination_payment_method_id.value = entry.destination_payment_method_id || ""; form.elements.notes.value = entry.notes || ""; $("#income-form-title").textContent = "Edit income"; form.querySelector("button[type=submit]").textContent = "Save income"; $("[data-cancel-income]").hidden = false; form.scrollIntoView({ behavior: "smooth", block: "start" }); }
     if (remove && confirm("Delete this income entry?")) { const result = await run(() => api(`/income/${remove.dataset.deleteIncome}`, { method: "DELETE" }), "Income deleted").catch(() => false); if (result !== false) { await loadIncomes(); renderReceiptIndex(); } }
   });
 }
@@ -609,8 +890,12 @@ async function loadAuthenticatedData() {
   await loadSetup();
   await loadIncomes();
   await loadReceipts();
+  await loadDashboard();
   const match = location.hash.match(/^#receipt\/([0-9a-f-]+)$/i);
-  if (match) await openReceipt(match[1]);
+  if (match) {
+    switchView("receipts");
+    await openReceipt(match[1]);
+  }
 }
 
 async function init() {

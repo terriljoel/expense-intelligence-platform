@@ -29,6 +29,7 @@ def post_merchant(
             session,
             household_id=principal.household_id,
             name=payload.name,
+            address=payload.address,
         )
     except MerchantAlreadyExistsError as exc:
         raise HTTPException(

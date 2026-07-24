@@ -14,6 +14,9 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.invitations import household_router, invitation_router
 from app.api.routes.payment_methods import router as payment_methods_router
 from app.api.routes.receipts import router as receipts_router
+from app.api.routes.receipt_captures import router as receipt_captures_router
+from app.api.routes.maintenance import router as maintenance_router
+from app.api.routes.dashboard import router as dashboard_router
 from app.db.session import engine
 
 
@@ -39,6 +42,9 @@ app.include_router(household_router)
 app.include_router(invitation_router)
 app.include_router(payment_methods_router)
 app.include_router(receipts_router)
+app.include_router(receipt_captures_router)
+app.include_router(maintenance_router)
+app.include_router(dashboard_router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -46,7 +52,10 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 def web_app() -> FileResponse:
     """Serve the small browser interface from the same FastAPI process."""
 
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(
+        STATIC_DIR / "index.html",
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
 
 
 @app.get("/health/live", tags=["health"])

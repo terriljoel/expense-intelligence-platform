@@ -17,6 +17,7 @@ credentials, server-side authentication sessions, and household invitations.
 | `merchants` | Household-scoped merchant names |
 | `payment_methods` | User-owned cash, card, transfer, or wallet method |
 | `receipts` | Receipt header, lifecycle, total, source, and image metadata |
+| `receipt_captures` | Private image metadata, OCR state, raw text, and review suggestions |
 | `receipt_items` | Ordered product, discount, fee, tax, or adjustment lines |
 | `receipt_payments` | One or more payment allocations for a receipt |
 | `income_entries` | Positive household income received by a member |

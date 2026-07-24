@@ -9,6 +9,11 @@ approval, income entries, merchants, payment methods, household invitations,
 and a simple household balance. Dashboard totals currently summarize the
 default EUR currency.
 
+Receipt images can be captured directly from a phone camera or selected from a
+computer. Images stay in private local storage, OCR runs through local
+Tesseract, and detected values are always shown for review before a draft is
+created.
+
 ## Start the application
 
 Run these commands from the project root.
@@ -32,6 +37,25 @@ Create the project-local environment once and install the dependencies:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r apps\api\requirements.txt
+```
+
+### Install local OCR
+
+Install Tesseract 5 for Windows using the installer linked by the
+[official Tesseract installation guide](https://tesseract-ocr.github.io/tessdoc/Installation.html#windows).
+Include both German (`deu`) and English (`eng`) language data. Confirm the
+installation in a new terminal:
+
+```powershell
+tesseract --version
+tesseract --list-langs
+```
+
+If `tesseract` is not on `PATH`, set its full executable path in `.env`:
+
+```dotenv
+TESSERACT_COMMAND=C:\Program Files\Tesseract-OCR\tesseract.exe
+TESSERACT_LANGUAGE=deu+eng
 ```
 
 On later PowerShell sessions, only activation is needed:
@@ -78,6 +102,19 @@ Open these addresses on the computer:
 - Web interface: <http://127.0.0.1:8000/>
 - Swagger API: <http://127.0.0.1:8000/docs>
 - Database readiness: <http://127.0.0.1:8000/health/ready>
+
+### Capture and read a receipt
+
+1. Open **Receipts** and select **Scan receipt**.
+2. Take a photo or select a JPEG, PNG, or WebP image up to 10 MB.
+3. Wait for local OCR, then compare the suggested merchant, date, and total
+   with the image and recognized text.
+4. Select **Review and create draft**, correct any value, and create the draft.
+5. Add or correct line items and payment details before approval.
+
+The image and OCR text are household-scoped and are never exposed as public
+static files. A SHA-256 check rejects duplicate image captures. OCR failure does
+not block manual entry, and OCR output never approves a receipt automatically.
 
 ## Open it on a phone
 

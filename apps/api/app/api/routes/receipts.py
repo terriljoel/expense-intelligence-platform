@@ -32,6 +32,10 @@ from app.services.receipt import (
     ReceiptNotFoundError,
     ReceiptNotReconciledError,
     ReceiptNotVoidableError,
+    ReceiptCaptureAlreadyUsedError,
+    ReceiptCaptureNotFoundError,
+    ReceiptCaptureNotReadyError,
+    DuplicateReceiptError,
     ReceiptPaymentConflictError,
     ReceiptPaymentNotFoundError,
     add_receipt_item,
@@ -109,15 +113,48 @@ def post_receipt(
             household_id=principal.household_id,
             created_by_user_id=principal.user_id,
             merchant_id=payload.merchant_id,
+            payment_method_id=payload.payment_method_id,
+            category=payload.category,
             purchase_date=payload.purchase_date,
             currency=payload.currency,
             stated_total=payload.stated_total,
             notes=payload.notes,
+            capture_id=payload.capture_id,
+            receipt_number=payload.receipt_number,
         )
     except MerchantNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Merchant not found in this household",
+        ) from exc
+    except PaymentMethodNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Active payment method not found for this user",
+        ) from exc
+    except ReceiptCaptureNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Receipt capture not found in this household",
+        ) from exc
+    except ReceiptCaptureNotReadyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Run OCR before creating a receipt from this capture",
+        ) from exc
+    except ReceiptCaptureAlreadyUsedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Receipt capture is already linked to a receipt",
+        ) from exc
+    except DuplicateReceiptError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "This appears to be a duplicate receipt",
+                "existing_receipt_id": str(exc.match.receipt_id),
+                "reason": exc.match.reason,
+            },
         ) from exc
 
     return _receipt_response(session, receipt)
@@ -189,6 +226,15 @@ def patch_receipt(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only draft receipts can be edited",
+        ) from exc
+    except DuplicateReceiptError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "These changes match an existing receipt",
+                "existing_receipt_id": str(exc.match.receipt_id),
+                "reason": exc.match.reason,
+            },
         ) from exc
     return _receipt_response(session, receipt)
 

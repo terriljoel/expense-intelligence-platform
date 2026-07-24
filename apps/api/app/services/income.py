@@ -47,6 +47,7 @@ def create_income(
     currency: str,
     destination_payment_method_id: UUID | None,
     notes: str | None,
+    category: str = "other",
 ) -> IncomeEntry:
     if destination_payment_method_id is not None:
         _validate_destination_method(
@@ -60,6 +61,7 @@ def create_income(
         received_by_user_id=received_by_user_id,
         source=source,
         income_type=income_type,
+        category=category,
         received_date=received_date,
         amount=amount,
         currency=currency,

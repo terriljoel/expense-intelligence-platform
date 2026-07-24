@@ -6,6 +6,7 @@ from app.models.invitation import HouseholdInvitation
 from app.models.merchant import Merchant
 from app.models.payment_method import PaymentMethod
 from app.models.receipt import Receipt, ReceiptItem, ReceiptPayment
+from app.models.receipt_capture import ReceiptCapture
 from app.models.user import User
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "Merchant",
     "PaymentMethod",
     "Receipt",
+    "ReceiptCapture",
     "ReceiptItem",
     "ReceiptPayment",
     "User",

@@ -11,8 +11,18 @@ from app.models import (
     Merchant,
     PaymentMethod,
     Receipt,
+    ReceiptCapture,
     ReceiptItem,
     ReceiptPayment,
+)
+from app.services.merchant import (
+    normalize_merchant_address,
+    normalize_merchant_name,
+)
+from app.services.duplicate_receipt import (
+    DuplicateMatch,
+    find_duplicate_receipt,
+    normalize_receipt_number,
 )
 
 
@@ -58,6 +68,26 @@ class ReceiptNotReconciledError(Exception):
 
 class ReceiptNotVoidableError(Exception):
     """Raised when a receipt cannot transition to the voided state."""
+
+
+class ReceiptCaptureNotFoundError(Exception):
+    """Raised when the selected capture is unavailable to the household."""
+
+
+class ReceiptCaptureNotReadyError(Exception):
+    """Raised when OCR has not completed or failed for a capture."""
+
+
+class ReceiptCaptureAlreadyUsedError(Exception):
+    """Raised when the capture is already linked to a receipt."""
+
+
+class DuplicateReceiptError(Exception):
+    """Raised when strong business fields match an existing receipt."""
+
+    def __init__(self, match: DuplicateMatch) -> None:
+        self.match = match
+        super().__init__(match.reason)
 
 
 def _audit_value(value: object) -> object:
@@ -124,6 +154,10 @@ def create_receipt(
     currency: str,
     stated_total: Decimal,
     notes: str | None,
+    capture_id: UUID | None = None,
+    payment_method_id: UUID | None = None,
+    category: str = "other",
+    receipt_number: str | None = None,
 ) -> Receipt:
     if merchant_id is not None:
         merchant_exists = session.scalar(
@@ -135,19 +169,93 @@ def create_receipt(
         if merchant_exists is None:
             raise MerchantNotFoundError
 
+    capture: ReceiptCapture | None = None
+    if capture_id is not None:
+        capture = session.scalar(
+            select(ReceiptCapture)
+            .where(
+                ReceiptCapture.id == capture_id,
+                ReceiptCapture.household_id == household_id,
+            )
+            .with_for_update()
+        )
+        if capture is None:
+            raise ReceiptCaptureNotFoundError
+        if capture.receipt_id is not None:
+            raise ReceiptCaptureAlreadyUsedError
+        if capture.ocr_status not in {"succeeded", "failed"}:
+            raise ReceiptCaptureNotReadyError
+
+        if merchant_id is None and capture.suggested_merchant_name:
+            normalized_name = normalize_merchant_name(capture.suggested_merchant_name)
+            normalized_address = normalize_merchant_address(
+                capture.suggested_merchant_address
+            )
+            merchant = session.scalar(
+                select(Merchant).where(
+                    Merchant.household_id == household_id,
+                    Merchant.normalized_name == normalized_name,
+                    Merchant.normalized_address == normalized_address,
+                )
+            )
+            if merchant is None:
+                merchant = Merchant(
+                    household_id=household_id,
+                    name=" ".join(capture.suggested_merchant_name.split()),
+                    normalized_name=normalized_name,
+                    address=(
+                        " ".join(capture.suggested_merchant_address.split())
+                        if capture.suggested_merchant_address
+                        else None
+                    ),
+                    normalized_address=normalized_address,
+                )
+                session.add(merchant)
+                session.flush()
+            merchant_id = merchant.id
+
+    if receipt_number is None and capture is not None:
+        receipt_number = capture.suggested_receipt_number
+    duplicate = find_duplicate_receipt(
+        session,
+        household_id=household_id,
+        merchant_id=merchant_id,
+        purchase_date=purchase_date,
+        transaction_time=(capture.suggested_transaction_time if capture else None),
+        total=stated_total,
+        currency=currency,
+        receipt_number=receipt_number,
+    )
+    if duplicate is not None and duplicate.level == "strong":
+        raise DuplicateReceiptError(duplicate)
+
     receipt = Receipt(
         household_id=household_id,
         merchant_id=merchant_id,
         created_by_user_id=created_by_user_id,
         purchase_date=purchase_date,
+        purchase_time=(capture.suggested_transaction_time if capture else None),
+        merchant_address=(capture.suggested_merchant_address if capture else None),
+        merchant_phone=(capture.suggested_merchant_phone if capture else None),
         currency=currency,
         stated_total=stated_total,
+        subtotal=(capture.suggested_subtotal if capture else None),
+        tax_amount=(capture.suggested_tax if capture else None),
+        tip_amount=(capture.suggested_tip if capture else None),
         status="draft",
-        source="manual",
+        source="image" if capture is not None else "manual",
+        category=category,
+        image_object_key=(capture.image_object_key if capture else None),
+        image_sha256=(capture.image_sha256 if capture else None),
         notes=notes,
+        receipt_number=receipt_number,
+        normalized_receipt_number=normalize_receipt_number(receipt_number),
     )
     session.add(receipt)
     session.flush()
+    if capture is not None:
+        capture.receipt_id = receipt.id
+        session.flush()
     record_audit_event(
         session,
         household_id=household_id,
@@ -158,8 +266,63 @@ def create_receipt(
             "stated_total": str(receipt.stated_total),
             "currency": receipt.currency,
             "source": receipt.source,
+            "capture_id": str(capture.id) if capture is not None else None,
         },
     )
+
+    if capture is not None:
+        for position, item in enumerate(capture.suggested_items or [], start=1):
+            add_receipt_item(
+                session,
+                household_id=household_id,
+                receipt_id=receipt.id,
+                actor_user_id=created_by_user_id,
+                position=position,
+                line_type="product",
+                raw_description=str(item["description"]),
+                description=str(item["description"]),
+                raw_quantity_text=(
+                    str(item["quantity"]) if item.get("quantity") is not None else None
+                ),
+                quantity=(
+                    Decimal(str(item["quantity"]))
+                    if item.get("quantity") is not None
+                    else None
+                ),
+                unit_price=(
+                    Decimal(str(item["unit_price"]))
+                    if item.get("unit_price") is not None
+                    else None
+                ),
+                line_total=Decimal(str(item["line_total"])),
+            )
+
+    active_methods = list(
+        session.scalars(
+            select(PaymentMethod).where(
+                PaymentMethod.household_id == household_id,
+                PaymentMethod.user_id == created_by_user_id,
+                PaymentMethod.is_active.is_(True),
+            )
+        )
+    )
+    selected_method = next(
+        (method for method in active_methods if method.id == payment_method_id),
+        None,
+    )
+    if payment_method_id is not None and selected_method is None:
+        raise PaymentMethodNotFoundError
+    if selected_method is None and payment_method_id is None and len(active_methods) == 1:
+        selected_method = active_methods[0]
+    if selected_method is not None and stated_total > 0:
+        add_receipt_payment(
+            session,
+            household_id=household_id,
+            receipt_id=receipt.id,
+            user_id=created_by_user_id,
+            payment_method_id=selected_method.id,
+            amount=stated_total,
+        )
     return receipt
 
 
@@ -171,9 +334,9 @@ def get_receipt(
     for_update: bool = False,
 ) -> Receipt:
     statement = select(Receipt).where(
-            Receipt.id == receipt_id,
-            Receipt.household_id == household_id,
-        )
+        Receipt.id == receipt_id,
+        Receipt.household_id == household_id,
+    )
     if for_update:
         statement = statement.with_for_update()
     receipt = session.scalar(statement)
@@ -208,6 +371,24 @@ def update_receipt(
         )
         if merchant_exists is None:
             raise MerchantNotFoundError
+
+    if "receipt_number" in changes:
+        changes["normalized_receipt_number"] = normalize_receipt_number(
+            changes["receipt_number"] if isinstance(changes["receipt_number"], str) else None
+        )
+    candidate_duplicate = find_duplicate_receipt(
+        session,
+        household_id=household_id,
+        merchant_id=changes.get("merchant_id", receipt.merchant_id),
+        purchase_date=changes.get("purchase_date", receipt.purchase_date),
+        transaction_time=receipt.purchase_time,
+        total=changes.get("stated_total", receipt.stated_total),
+        currency=changes.get("currency", receipt.currency),
+        receipt_number=changes.get("receipt_number", receipt.receipt_number),
+        exclude_receipt_id=receipt.id,
+    )
+    if candidate_duplicate is not None and candidate_duplicate.level == "strong":
+        raise DuplicateReceiptError(candidate_duplicate)
 
     changed_fields = _field_changes(receipt, changes)
     for field_name in changed_fields:
@@ -376,10 +557,7 @@ def update_receipt_item(
         new_line_total = Decimal(str(new_line_total))
     if new_line_type == "discount" and new_line_total > 0:
         raise ReceiptItemAmountError
-    if (
-        new_line_type in {"product", "deposit", "fee", "tax"}
-        and new_line_total < 0
-    ):
+    if new_line_type in {"product", "deposit", "fee", "tax"} and new_line_total < 0:
         raise ReceiptItemAmountError
 
     changed_fields = _field_changes(item, changes)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -16,6 +16,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    Time,
     UniqueConstraint,
     func,
     text,
@@ -32,9 +33,7 @@ if TYPE_CHECKING:
 class Receipt(Base):
     __tablename__ = "receipts"
     __table_args__ = (
-        UniqueConstraint(
-            "id", "household_id", name="receipts_id_household_unique"
-        ),
+        UniqueConstraint("id", "household_id", name="receipts_id_household_unique"),
         ForeignKeyConstraint(
             ["household_id", "created_by_user_id"],
             ["household_members.household_id", "household_members.user_id"],
@@ -45,12 +44,8 @@ class Receipt(Base):
             ["merchants.id", "merchants.household_id"],
             name="receipts_merchant_scope_fk",
         ),
-        CheckConstraint(
-            "currency ~ '^[A-Z]{3}$'", name="receipts_currency_valid"
-        ),
-        CheckConstraint(
-            "stated_total >= 0", name="receipts_total_nonnegative"
-        ),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="receipts_currency_valid"),
+        CheckConstraint("stated_total >= 0", name="receipts_total_nonnegative"),
         CheckConstraint(
             "status IN ('draft', 'pending_review', "
             "'reconciliation_failed', 'approved', 'voided')",
@@ -59,6 +54,12 @@ class Receipt(Base):
         CheckConstraint(
             "source IN ('manual', 'image', 'import')",
             name="receipts_source_valid",
+        ),
+        CheckConstraint(
+            "category IN ('groceries', 'rent', 'health_insurance', 'transport', "
+            "'university_fees', 'utilities', 'subscriptions', 'dining', "
+            "'shopping', 'travel', 'other')",
+            name="receipts_category_valid",
         ),
         CheckConstraint(
             "image_sha256 IS NULL OR image_sha256 ~ '^[0-9a-f]{64}$'",
@@ -77,9 +78,7 @@ class Receipt(Base):
             "household_id",
             "image_sha256",
             unique=True,
-            postgresql_where=text(
-                "image_sha256 IS NOT NULL AND status <> 'voided'"
-            ),
+            postgresql_where=text("image_sha256 IS NOT NULL AND status <> 'voided'"),
         ),
         Index(
             "receipts_household_purchase_date_idx",
@@ -87,6 +86,17 @@ class Receipt(Base):
             text("purchase_date DESC"),
         ),
         Index("receipts_merchant_idx", "household_id", "merchant_id"),
+        Index(
+            "receipts_number_identity_unique",
+            "household_id",
+            "merchant_id",
+            "purchase_date",
+            "normalized_receipt_number",
+            unique=True,
+            postgresql_where=text(
+                "normalized_receipt_number IS NOT NULL AND status <> 'voided'"
+            ),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -104,19 +114,30 @@ class Receipt(Base):
         PGUUID(as_uuid=True), nullable=False
     )
     purchase_date: Mapped[date] = mapped_column(Date, nullable=False)
+    purchase_time: Mapped[time | None] = mapped_column(Time)
+    merchant_address: Mapped[str | None] = mapped_column(Text)
+    merchant_phone: Mapped[str | None] = mapped_column(Text)
     currency: Mapped[str] = mapped_column(
         String(3), nullable=False, server_default=text("'EUR'")
     )
     stated_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    subtotal: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    tax_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    tip_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     status: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'draft'")
     )
     source: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'manual'")
     )
+    category: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'other'")
+    )
     image_object_key: Mapped[str | None] = mapped_column(Text)
     image_sha256: Mapped[str | None] = mapped_column(String(64))
     notes: Mapped[str | None] = mapped_column(Text)
+    receipt_number: Mapped[str | None] = mapped_column(Text)
+    normalized_receipt_number: Mapped[str | None] = mapped_column(Text)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
@@ -154,9 +175,7 @@ class ReceiptItem(Base):
             name="receipt_items_receipt_scope_fk",
             ondelete="CASCADE",
         ),
-        CheckConstraint(
-            "position > 0", name="receipt_items_position_positive"
-        ),
+        CheckConstraint("position > 0", name="receipt_items_position_positive"),
         CheckConstraint(
             "btrim(description) <> ''",
             name="receipt_items_description_not_blank",

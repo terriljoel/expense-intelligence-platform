@@ -68,6 +68,28 @@ def test_duplicate_normalized_merchant_is_rejected(
     }
 
 
+def test_same_merchant_name_at_different_addresses_is_allowed(
+    merchant_client: TestClient,
+) -> None:
+    first = merchant_client.post(
+        "/merchants",
+        json={"name": "ALDI", "address": "Hauptstrasse 1"},
+    )
+    second = merchant_client.post(
+        "/merchants",
+        json={"name": "ALDI", "address": "Bahnhofstrasse 20"},
+    )
+    duplicate = merchant_client.post(
+        "/merchants",
+        json={"name": "aldi", "address": "  HAUPTSTRASSE   1 "},
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] != second.json()["id"]
+    assert duplicate.status_code == 409
+
+
 def test_blank_merchant_name_is_rejected(merchant_client: TestClient) -> None:
     response = merchant_client.post("/merchants", json={"name": "   "})
 

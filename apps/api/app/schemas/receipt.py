@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any, Literal, Self
 from uuid import UUID
@@ -13,13 +13,21 @@ from pydantic import (
 
 
 class ReceiptCreate(BaseModel):
+    capture_id: UUID | None = None
     merchant_id: UUID | None = None
+    payment_method_id: UUID | None = None
+    category: Literal[
+        "groceries", "rent", "health_insurance", "transport",
+        "university_fees", "utilities", "subscriptions", "dining",
+        "shopping", "travel", "other",
+    ] = "other"
     purchase_date: date
     currency: str = Field(default="EUR", pattern=r"^[A-Z]{3}$")
     stated_total: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     notes: str | None = Field(default=None, max_length=1000)
+    receipt_number: str | None = Field(default=None, max_length=100)
 
-    @field_validator("notes")
+    @field_validator("notes", "receipt_number")
     @classmethod
     def clean_notes(cls, value: str | None) -> str | None:
         if value is None:
@@ -30,6 +38,11 @@ class ReceiptCreate(BaseModel):
 
 class ReceiptUpdate(BaseModel):
     merchant_id: UUID | None = None
+    category: Literal[
+        "groceries", "rent", "health_insurance", "transport",
+        "university_fees", "utilities", "subscriptions", "dining",
+        "shopping", "travel", "other",
+    ] | None = None
     purchase_date: date | None = None
     currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     stated_total: Decimal | None = Field(
@@ -39,8 +52,9 @@ class ReceiptUpdate(BaseModel):
         decimal_places=2,
     )
     notes: str | None = Field(default=None, max_length=1000)
+    receipt_number: str | None = Field(default=None, max_length=100)
 
-    @field_validator("notes")
+    @field_validator("notes", "receipt_number")
     @classmethod
     def clean_notes(cls, value: str | None) -> str | None:
         if value is None:
@@ -52,7 +66,12 @@ class ReceiptUpdate(BaseModel):
     def require_valid_change(self) -> Self:
         if not self.model_fields_set:
             raise ValueError("At least one field must be supplied")
-        for required_field in ("purchase_date", "currency", "stated_total"):
+        for required_field in (
+            "category",
+            "purchase_date",
+            "currency",
+            "stated_total",
+        ):
             if (
                 required_field in self.model_fields_set
                 and getattr(self, required_field) is None
@@ -81,11 +100,19 @@ class ReceiptResponse(BaseModel):
     created_by_user_id: UUID
     created_by_display_name: str | None = None
     purchase_date: date
+    purchase_time: time | None
+    merchant_address: str | None
+    merchant_phone: str | None
     currency: str
     stated_total: Decimal
+    subtotal: Decimal | None
+    tax_amount: Decimal | None
+    tip_amount: Decimal | None
     status: str
     source: str
+    category: str
     notes: str | None
+    receipt_number: str | None
     approved_at: datetime | None
     voided_at: datetime | None
     created_at: datetime
@@ -138,9 +165,7 @@ class ReceiptItemCreate(BaseModel):
             self.line_type in {"product", "deposit", "fee", "tax"}
             and self.line_total < 0
         ):
-            raise ValueError(
-                f"{self.line_type} line totals must be zero or positive"
-            )
+            raise ValueError(f"{self.line_type} line totals must be zero or positive")
         return self
 
 
@@ -217,9 +242,7 @@ class ReceiptItemUpdate(BaseModel):
                 self.line_type in {"product", "deposit", "fee", "tax"}
                 and self.line_total < 0
             ):
-                raise ValueError(
-                    f"{self.line_type} line totals must be non-negative"
-                )
+                raise ValueError(f"{self.line_type} line totals must be non-negative")
         return self
 
 

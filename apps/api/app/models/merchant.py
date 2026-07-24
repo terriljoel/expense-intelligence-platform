@@ -25,13 +25,12 @@ if TYPE_CHECKING:
 class Merchant(Base):
     __tablename__ = "merchants"
     __table_args__ = (
-        UniqueConstraint(
-            "id", "household_id", name="merchants_id_household_unique"
-        ),
+        UniqueConstraint("id", "household_id", name="merchants_id_household_unique"),
         UniqueConstraint(
             "household_id",
             "normalized_name",
-            name="merchants_normalized_name_unique",
+            "normalized_address",
+            name="merchants_identity_unique",
         ),
         CheckConstraint("btrim(name) <> ''", name="merchants_name_not_blank"),
         CheckConstraint(
@@ -52,6 +51,10 @@ class Merchant(Base):
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_name: Mapped[str] = mapped_column(Text, nullable=False)
+    address: Mapped[str | None] = mapped_column(Text)
+    normalized_address: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("''")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

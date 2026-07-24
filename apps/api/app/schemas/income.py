@@ -19,6 +19,10 @@ IncomeType = Literal[
 class IncomeCreate(BaseModel):
     source: str = Field(min_length=1, max_length=200)
     income_type: IncomeType = "other"
+    category: Literal[
+        "salary_payslip", "freelance", "interest", "gift", "refund",
+        "benefits", "other",
+    ] = "other"
     received_date: date
     amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
     currency: str = Field(default="EUR", pattern=r"^[A-Z]{3}$")
@@ -45,6 +49,10 @@ class IncomeCreate(BaseModel):
 class IncomeUpdate(BaseModel):
     source: str | None = Field(default=None, min_length=1, max_length=200)
     income_type: IncomeType | None = None
+    category: Literal[
+        "salary_payslip", "freelance", "interest", "gift", "refund",
+        "benefits", "other",
+    ] | None = None
     received_date: date | None = None
     amount: Decimal | None = Field(
         default=None, gt=0, max_digits=14, decimal_places=2
@@ -78,6 +86,7 @@ class IncomeUpdate(BaseModel):
         for field_name in (
             "source",
             "income_type",
+            "category",
             "received_date",
             "amount",
             "currency",
@@ -96,6 +105,7 @@ class IncomeResponse(BaseModel):
     destination_payment_method_id: UUID | None
     source: str
     income_type: str
+    category: str
     received_date: date
     amount: Decimal
     currency: str

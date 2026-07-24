@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#18392b" />
     <title>Expense Intelligence</title>
-    <link rel="stylesheet" href="/static/styles.css" />
-    <script src="/static/app.js" defer></script>
+    <link rel="stylesheet" href="/static/styles.css?v=20260723-dashboard-mobile-2" />
+    <script src="/static/app.js?v=20260723-dashboard-mobile-2" defer></script>
   </head>
   <body>
     <section id="login-view" class="login-screen">
@@ -49,7 +49,7 @@
 
     <div id="app-shell" hidden>
     <header class="topbar">
-      <a class="brand" href="#receipts" aria-label="Expense Intelligence home">
+      <a class="brand" href="#dashboard" aria-label="Expense Intelligence home">
         <span class="brand-mark">€</span>
         <span><strong>Expense Intelligence</strong><small id="active-household-name">Local household</small></span>
       </a>
@@ -59,7 +59,8 @@
         <button id="create-household-button" class="nav-button" type="button" title="Create another household">+ New</button>
       </div>
       <nav aria-label="Main navigation">
-        <button class="nav-button active" data-view="receipts">Receipts</button>
+        <button class="nav-button active" data-view="dashboard">Dashboard</button>
+        <button class="nav-button" data-view="receipts">Receipts</button>
         <button class="nav-button" data-view="income">Income</button>
         <button class="nav-button" data-view="members">Members</button>
         <button class="nav-button" data-view="settings">Setup</button>
@@ -71,17 +72,83 @@
     <main class="page-shell">
       <div id="notice" class="notice" role="status" hidden></div>
 
-      <section id="receipts-view" class="view">
+      <section id="dashboard-view" class="view">
+        <div class="dashboard-hero">
+          <div><p class="eyebrow">Household intelligence</p><h1>Spending dashboard</h1><p id="dashboard-subtitle" class="muted">Approved spending at a glance.</p></div>
+          <div class="dashboard-controls">
+            <form id="dashboard-period-form" class="period-picker">
+              <label>Month<select name="month"></select></label>
+              <label>Year<select name="year"></select></label>
+            </form>
+            <div class="dashboard-export-actions">
+              <button id="export-dashboard-csv" class="dashboard-export-button" type="button">Export CSV</button>
+              <button id="print-dashboard" class="dashboard-export-button" type="button">Print / PDF</button>
+            </div>
+          </div>
+        </div>
+        <div id="dashboard-alerts"></div>
+        <div id="dashboard-kpis" class="dashboard-kpis"></div>
+        <div class="dashboard-grid">
+          <section class="card chart-card dashboard-span-2">
+            <div class="section-heading"><div><p class="eyebrow">Cash flow</p><h2>Income vs expenditure</h2></div><span class="chart-legend"><i class="income-dot"></i>Income <i class="expense-dot"></i>Expense</span></div>
+            <div id="spending-trend-chart" class="trend-chart"></div>
+          </section>
+          <section class="card chart-card">
+            <div class="section-heading"><div><p class="eyebrow">This month</p><h2>Category breakdown</h2></div></div>
+            <div id="category-chart" class="category-chart"></div>
+          </section>
+          <section class="card chart-card">
+            <div class="section-heading"><div><p class="eyebrow">Where money went</p><h2>Top merchants</h2></div><select id="merchant-period"><option value="month">Month</option><option value="year">Year</option></select></div>
+            <div id="top-merchants-chart" class="rank-list"></div>
+          </section>
+          <section class="card chart-card dashboard-span-2">
+            <div class="section-heading"><div><p class="eyebrow">Shopping habits</p><h2>Most purchased products</h2></div><span class="muted">Ranked by purchase frequency</span></div>
+            <div id="top-products-table" class="product-table"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="receipts-view" class="view" hidden>
         <div id="receipt-index">
           <div class="page-heading">
             <div><p class="eyebrow">Overview</p><h1>Your receipts</h1></div>
-            <button id="show-create-receipt" class="primary">+ New receipt</button>
+            <div class="action-row page-actions">
+              <button id="show-capture-receipt" class="primary">Scan receipt</button>
+              <button id="show-create-receipt" class="secondary">Manual entry</button>
+            </div>
           </div>
+
+          <form id="receipt-capture-form" class="card form-card" hidden>
+            <div class="section-heading"><div><h2>Capture receipt</h2><p class="muted">Take a clear, straight photo with the entire receipt visible.</p></div><button type="button" class="text-button" data-cancel-capture>Cancel</button></div>
+            <label class="capture-dropzone">Receipt image<input name="file" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required /></label>
+            <img id="capture-preview" class="capture-preview" alt="Receipt preview" hidden />
+            <button class="primary" type="submit">Upload and read text</button>
+          </form>
+
+          <section id="capture-review" class="card capture-review" hidden>
+            <div class="section-heading"><div><h2>Review OCR suggestions</h2><p id="capture-status" class="muted"></p></div><button id="discard-capture" type="button" class="text-button">Discard</button></div>
+            <div class="capture-grid">
+              <img id="capture-image" class="capture-image" alt="Captured receipt" />
+              <div>
+                <dl id="capture-suggestions" class="suggestion-list"></dl>
+                <div id="capture-duplicate-warning" class="dashboard-note" hidden></div>
+                <button id="open-duplicate-receipt" class="secondary" type="button" hidden>Open existing receipt</button>
+                <p id="capture-error" class="capture-error" hidden></p>
+                <details id="capture-raw-details"><summary>Recognized text</summary><pre id="capture-raw-text"></pre></details>
+                <div class="action-row"><button id="use-capture" type="button" class="primary">Review and create draft</button><button id="retry-ocr" type="button" class="secondary">Retry OCR</button></div>
+              </div>
+            </div>
+          </section>
 
           <form id="receipt-create-form" class="card form-card" hidden>
             <div class="section-heading"><h2>Create receipt</h2><button type="button" class="text-button" data-cancel-create>Cancel</button></div>
+            <input name="capture_id" type="hidden" />
+            <p id="capture-merchant-hint" class="muted" hidden></p>
             <div class="form-grid">
               <label>Merchant<select name="merchant_id" data-merchant-select><option value="">No merchant</option></select></label>
+              <label>Category<select name="category" data-expense-category></select></label>
+              <label>Payment suggestion<select name="payment_method_id" data-payment-select><option value="">Add payment later</option></select></label>
+              <label>Receipt number<input name="receipt_number" maxlength="100" placeholder="Optional" /></label>
               <label>Purchase date<input name="purchase_date" type="date" required /></label>
               <label>Total<input name="stated_total" type="number" min="0" step="0.01" inputmode="decimal" required /></label>
               <label>Currency<input name="currency" value="EUR" maxlength="3" pattern="[A-Z]{3}" required /></label>
@@ -105,6 +172,8 @@
             <div class="section-heading"><h2>Receipt</h2><button class="secondary" type="submit">Save changes</button></div>
             <div class="form-grid">
               <label>Merchant<select name="merchant_id" data-merchant-select><option value="">No merchant</option></select></label>
+              <label>Category<select name="category" data-expense-category></select></label>
+              <label>Receipt number<input name="receipt_number" maxlength="100" placeholder="Optional" /></label>
               <label>Purchase date<input name="purchase_date" type="date" required /></label>
               <label>Total<input name="stated_total" type="number" min="0" step="0.01" inputmode="decimal" required /></label>
               <label>Currency<input name="currency" maxlength="3" pattern="[A-Z]{3}" required /></label>
@@ -166,7 +235,7 @@
           <div class="section-heading"><h2 id="income-form-title">Add income</h2><button type="button" class="text-button" data-cancel-income hidden>Cancel edit</button></div>
           <div class="form-grid">
             <label>Source<input name="source" placeholder="Employer, client or person" maxlength="200" required /></label>
-            <label>Type<select name="income_type" required><option value="salary">Salary</option><option value="freelance">Freelance</option><option value="interest">Interest</option><option value="gift">Gift</option><option value="refund">Refund</option><option value="other">Other</option></select></label>
+            <label>Category<select name="category" data-income-category required></select></label>
             <label>Received date<input name="received_date" type="date" required /></label>
             <label>Amount<input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required /></label>
             <label>Currency<input name="currency" value="EUR" maxlength="3" pattern="[A-Z]{3}" required /></label>
@@ -185,7 +254,7 @@
           <section class="card">
             <h2>Merchants</h2>
             <p class="muted">A merchant is a shop or service you paid.</p>
-            <form id="merchant-form" class="inline-create"><input name="name" placeholder="e.g. REWE" maxlength="200" required /><button class="primary">Add</button></form>
+            <form id="merchant-form" class="compact-form"><label>Name<input name="name" placeholder="e.g. ALDI" maxlength="200" required /></label><label>Branch address<input name="address" placeholder="Optional" maxlength="500" /></label><button class="primary">Add merchant</button></form>
             <div id="merchant-list" class="setting-list"></div>
           </section>
           <section class="card">
@@ -200,6 +269,21 @@
             <div id="method-list" class="setting-list"></div>
           </section>
         </div>
+        <section id="maintenance-card" class="card" hidden>
+          <div class="section-heading"><h2>Data maintenance</h2><span class="muted">Owner and admin</span></div>
+          <p class="muted">Archive or clear this household's financial activity. Users, members, merchants, payment methods, and household settings are preserved.</p>
+          <div id="maintenance-counts" class="setting-list"></div>
+          <div class="inline-fields">
+            <button id="download-archive-button" class="secondary" type="button">Download archive</button>
+            <button id="refresh-maintenance-button" class="secondary" type="button">Refresh counts</button>
+          </div>
+          <form id="household-reset-form" class="compact-form">
+            <label>Type <strong id="reset-confirmation-phrase"></strong> to confirm
+              <input name="confirmation" autocomplete="off" required />
+            </label>
+            <button class="danger" type="submit">Reset household data</button>
+          </form>
+        </section>
       </section>
 
       <section id="members-view" class="view" hidden>

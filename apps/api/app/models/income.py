@@ -60,6 +60,11 @@ class IncomeEntry(Base):
             "'gift', 'refund', 'other')",
             name="income_entries_type_valid",
         ),
+        CheckConstraint(
+            "category IN ('salary_payslip', 'freelance', 'interest', 'gift', "
+            "'refund', 'benefits', 'other')",
+            name="income_entries_category_valid",
+        ),
         CheckConstraint("amount > 0", name="income_entries_amount_positive"),
         CheckConstraint(
             "currency ~ '^[A-Z]{3}$'", name="income_entries_currency_valid"
@@ -89,6 +94,9 @@ class IncomeEntry(Base):
     )
     source: Mapped[str] = mapped_column(Text, nullable=False)
     income_type: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'other'")
+    )
+    category: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'other'")
     )
     received_date: Mapped[date] = mapped_column(Date, nullable=False)
