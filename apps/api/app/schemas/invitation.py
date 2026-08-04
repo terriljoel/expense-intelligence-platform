@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class InvitationCreate(BaseModel):
     email: str = Field(min_length=3, max_length=320)
-    role: Literal["admin", "member"] = "member"
+    role: Literal["member"] = "member"
 
     @field_validator("email")
     @classmethod

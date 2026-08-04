@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -24,6 +24,7 @@ from app.services.duplicate_receipt import (
     find_duplicate_receipt,
     normalize_receipt_number,
 )
+from app.services.text_normalization import normalize_receipt_item
 
 
 class MerchantNotFoundError(Exception):
@@ -312,7 +313,11 @@ def create_receipt(
     )
     if payment_method_id is not None and selected_method is None:
         raise PaymentMethodNotFoundError
-    if selected_method is None and payment_method_id is None and len(active_methods) == 1:
+    if (
+        selected_method is None
+        and payment_method_id is None
+        and len(active_methods) == 1
+    ):
         selected_method = active_methods[0]
     if selected_method is not None and stated_total > 0:
         add_receipt_payment(
@@ -374,7 +379,9 @@ def update_receipt(
 
     if "receipt_number" in changes:
         changes["normalized_receipt_number"] = normalize_receipt_number(
-            changes["receipt_number"] if isinstance(changes["receipt_number"], str) else None
+            changes["receipt_number"]
+            if isinstance(changes["receipt_number"], str)
+            else None
         )
     candidate_duplicate = find_duplicate_receipt(
         session,
@@ -447,6 +454,7 @@ def add_receipt_item(
         line_type=line_type,
         raw_description=raw_description,
         description=description,
+        normalized_description=normalize_receipt_item(description),
         raw_quantity_text=raw_quantity_text,
         quantity=quantity,
         unit_price=unit_price,
@@ -561,6 +569,23 @@ def update_receipt_item(
         raise ReceiptItemAmountError
 
     changed_fields = _field_changes(item, changes)
+    if "description" in changed_fields:
+        changes["normalized_description"] = normalize_receipt_item(
+            str(changes["description"])
+        )
+        changes["product_id"] = None
+        changes["product_match_status"] = "unmatched"
+        changes["product_match_method"] = None
+        changes["product_match_confidence"] = None
+        changed_fields.extend(
+            [
+                "normalized_description",
+                "product_id",
+                "product_match_status",
+                "product_match_method",
+                "product_match_confidence",
+            ]
+        )
     for field_name in changed_fields:
         setattr(item, field_name, changes[field_name])
     if changed_fields:
@@ -853,12 +878,29 @@ def list_receipts(
     household_id: UUID,
     limit: int = 50,
     offset: int = 0,
+    query: str | None = None,
 ) -> list[Receipt]:
+    statement = select(Receipt).where(Receipt.household_id == household_id)
+    if query and (term := query.strip()):
+        pattern = f"%{term}%"
+        statement = statement.where(
+            or_(
+                Receipt.category.ilike(pattern),
+                Receipt.notes.ilike(pattern),
+                Receipt.receipt_number.ilike(pattern),
+                exists().where(
+                    Merchant.id == Receipt.merchant_id,
+                    Merchant.name.ilike(pattern),
+                ),
+                exists().where(
+                    ReceiptItem.receipt_id == Receipt.id,
+                    ReceiptItem.description.ilike(pattern),
+                ),
+            )
+        )
     return list(
         session.scalars(
-            select(Receipt)
-            .where(Receipt.household_id == household_id)
-            .order_by(Receipt.purchase_date.desc(), Receipt.created_at.desc())
+            statement.order_by(Receipt.purchase_date.desc(), Receipt.created_at.desc())
             .limit(limit)
             .offset(offset)
         )

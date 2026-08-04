@@ -1,21 +1,23 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import (
     CurrentPrincipal,
     get_current_principal,
     reject_cross_site_request,
+    require_global_admin,
     require_household_admin,
 )
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
-from app.models import Household, HouseholdMember, User
+from app.models import AuthSession, Household, HouseholdMember, User, UserCredential
 from app.schemas.household import (
     HouseholdResponse,
     HouseholdUpdate,
+    MemberPasswordReset,
     MemberRoleUpdate,
 )
 from app.schemas.invitation import (
@@ -50,7 +52,7 @@ from app.services.household import (
     update_household,
     update_member_role,
 )
-from app.services.auth import SESSION_COOKIE_NAME
+from app.services.auth import SESSION_COOKIE_NAME, password_hash
 
 
 household_router = APIRouter(prefix="/household", tags=["household"])
@@ -173,6 +175,36 @@ def patch_household_member(
     return _member_response(membership=membership, user=user)
 
 
+@household_router.put(
+    "/members/{user_id}/password",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def reset_household_member_password(
+    user_id: UUID,
+    payload: MemberPasswordReset,
+    principal: CurrentPrincipal = Depends(require_global_admin),
+    session: Session = Depends(get_db_session),
+) -> None:
+    membership = session.get(
+        HouseholdMember,
+        {"household_id": principal.household_id, "user_id": user_id},
+    )
+    if membership is None or not membership.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Active household member not found",
+        )
+    credential = session.get(UserCredential, user_id)
+    if credential is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Password login is not configured for this member",
+        )
+    credential.password_hash = password_hash.hash(payload.password)
+    session.execute(delete(AuthSession).where(AuthSession.user_id == user_id))
+    session.flush()
+
+
 @household_router.delete(
     "/members/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -198,7 +230,7 @@ def delete_household_member(
     except HouseholdPermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="An admin cannot remove a household owner",
+            detail="You cannot remove this household owner",
         ) from exc
     except SelfRemovalError as exc:
         raise HTTPException(

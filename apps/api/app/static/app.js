@@ -2,6 +2,7 @@
 
 const state = {
   receipts: [],
+  recurring: [],
   incomes: [],
   merchants: [],
   methods: [],
@@ -32,6 +33,7 @@ const formatTime = (value) => new Intl.DateTimeFormat("en-DE", { dateStyle: "med
 const titleCase = (value) => String(value).replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 const expenseCategories = ["groceries", "rent", "health_insurance", "transport", "university_fees", "utilities", "subscriptions", "dining", "shopping", "travel", "other"];
 const incomeCategories = ["salary_payslip", "freelance", "interest", "gift", "refund", "benefits", "other"];
+let selectedReceiptImage = null;
 
 async function api(path, options = {}) {
   const isFormData = options.body instanceof FormData;
@@ -131,6 +133,7 @@ function clearHouseholdData() {
 }
 
 function resetCaptureUi() {
+  selectedReceiptImage = null;
   state.capture = null;
   const captureForm = $("#receipt-capture-form");
   captureForm.reset();
@@ -143,6 +146,7 @@ function resetCaptureUi() {
   $("#open-duplicate-receipt").hidden = true;
   $("#use-capture").disabled = false;
   $("#receipt-create-form").elements.capture_id.value = "";
+  $("#auto-recognize-products-option").hidden = true;
 }
 
 function renderCaptureReview() {
@@ -174,7 +178,8 @@ function renderCaptureReview() {
   $("#use-capture").textContent = strongDuplicate ? "Duplicate receipt blocked" : (capture.ocr_status === "succeeded" ? "Review and create draft" : "Enter values manually");
 }
 
-function useCaptureSuggestions() {
+async function useCaptureSuggestions() {
+  $("#auto-recognize-products-option").hidden = false;
   const capture = state.capture;
   if (!capture) return;
   const form = $("#receipt-create-form");
@@ -189,10 +194,34 @@ function useCaptureSuggestions() {
   form.elements.category.value = /aldi|lidl|rewe|edeka|penny|netto|kaufland|supermarkt|grocery/.test(ocrWords) ? "groceries" : "other";
   const normalizedMerchant = String(capture.suggested_merchant_name || "").trim().toLocaleLowerCase();
   const normalizedAddress = String(capture.suggested_merchant_address || "").trim().replace(/\s+/g, " ").toLocaleLowerCase();
-  const merchant = state.merchants.find((entry) => entry.normalized_name === normalizedMerchant && entry.normalized_address === normalizedAddress);
+  let merchant = state.merchants.find((entry) => entry.normalized_name === normalizedMerchant && entry.normalized_address === normalizedAddress);
+  if (!merchant && capture.suggested_merchant_name) {
+    merchant = await api("/merchants", {
+      method: "POST",
+      body: JSON.stringify({
+        name: capture.suggested_merchant_name,
+        address: capture.suggested_merchant_address || null,
+      }),
+    }).catch(async (error) => {
+      if (error.status !== 409) throw error;
+      state.merchants = await api("/merchants");
+      return state.merchants.find((entry) => entry.normalized_name === normalizedMerchant && entry.normalized_address === normalizedAddress) || null;
+    });
+    if (merchant) {
+      state.merchants = [merchant, ...state.merchants.filter((entry) => entry.id !== merchant.id)];
+      state.merchants.sort((a, b) => String(a.normalized_name).localeCompare(String(b.normalized_name)));
+    }
+  }
+  // Rebuild the options after an OCR merchant is created or reloaded. Assigning
+  // select.value before its option exists leaves the dropdown unselected.
+  renderSelects();
   form.elements.merchant_id.value = merchant?.id || "";
   const hint = $("#capture-merchant-hint");
-  hint.textContent = capture.suggested_merchant_name && !merchant ? `OCR read merchant “${capture.suggested_merchant_name}”. Select an existing merchant or add it under Settings.` : "This draft will retain the captured image and OCR evidence.";
+  hint.textContent = capture.suggested_merchant_name && merchant
+    ? `OCR read merchant “${capture.suggested_merchant_name}”. It was added to your household and preselected for this draft.`
+    : capture.suggested_merchant_name
+      ? `OCR read merchant “${capture.suggested_merchant_name}”. Select an existing merchant or add it under Settings.`
+      : "This draft will retain the captured image and OCR evidence.";
   hint.hidden = false;
   form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -259,7 +288,7 @@ function switchView(name) {
 }
 
 async function loadMaintenance() {
-  const canAdminister = ["owner", "admin"].includes(state.user?.role);
+  const canAdminister = state.user?.role === "owner" || state.user?.is_global_admin;
   const card = $("#maintenance-card");
   card.hidden = !canAdminister;
   if (!canAdminister) return;
@@ -281,22 +310,23 @@ async function loadMembers() {
     api("/household"),
     api("/household/members"),
   ]);
-  const canAdminister = ["owner", "admin"].includes(state.user?.role);
+  const canAdminister = state.user?.role === "owner" || state.user?.is_global_admin;
   $("#invitation-admin-card").hidden = !canAdminister;
   state.invitations = canAdminister ? await api("/household/invitations") : [];
   renderMembers();
 }
 
 function renderMembers() {
-  const canAdminister = ["owner", "admin"].includes(state.user?.role);
-  const isOwner = state.user?.role === "owner";
+  const canAdminister = state.user?.role === "owner" || state.user?.is_global_admin;
+  const isOwner = state.user?.role === "owner" || state.user?.is_global_admin;
   $("#member-count").textContent = `${state.members.length} member${state.members.length === 1 ? "" : "s"}`;
   $("#member-list").innerHTML = state.members.map((member) => {
     const isSelf = member.user_id === state.user.user_id;
     const canChange = canAdminister && (isOwner || (member.role !== "owner" && !isSelf));
     const canRemove = canAdminister && !isSelf && (isOwner || member.role !== "owner");
-    const roleOptions = (isOwner ? ["owner", "admin", "member"] : ["admin", "member"]).map((role) => `<option value="${role}"${role === member.role ? " selected" : ""}>${titleCase(role)}</option>`).join("");
-    return `<div class="setting-item"><div class="line-copy"><strong>${escapeHtml(member.display_name)}${isSelf ? " (you)" : ""}</strong><small>${escapeHtml(member.email || "No email")} · joined ${formatTime(member.joined_at)}</small></div><div class="member-actions">${canChange ? `<select data-member-role="${member.user_id}" aria-label="Role for ${escapeHtml(member.display_name)}">${roleOptions}</select>` : `<span class="status">${titleCase(member.role)}</span>`}${canRemove ? `<button class="icon-button delete" data-remove-member="${member.user_id}">Remove</button>` : ""}</div></div>`;
+    const canResetPassword = state.user?.is_global_admin && !isSelf;
+    const roleOptions = ["owner", "member"].map((role) => `<option value="${role}"${role === member.role ? " selected" : ""}>${titleCase(role)}</option>`).join("");
+    return `<div class="setting-item"><div class="line-copy"><strong>${escapeHtml(member.display_name)}${isSelf ? " (you)" : ""}</strong><small>${escapeHtml(member.email || "No email")} · joined ${formatTime(member.joined_at)}</small></div><div class="member-actions">${canChange ? `<select data-member-role="${member.user_id}" aria-label="Role for ${escapeHtml(member.display_name)}">${roleOptions}</select>` : `<span class="status">${titleCase(member.role)}</span>`}${canResetPassword ? `<button class="icon-button" data-reset-password="${member.user_id}" data-member-name="${escapeHtml(member.display_name)}">Reset password</button>` : ""}${canRemove ? `<button class="icon-button delete" data-remove-member="${member.user_id}">Remove</button>` : ""}</div></div>`;
   }).join("") || `<p class="muted">No members found.</p>`;
   $("#pending-invitation-list").innerHTML = state.invitations.map((invitation) => `<div class="setting-item"><div class="line-copy"><strong>${escapeHtml(invitation.email)}</strong><small>${titleCase(invitation.role)} · expires ${formatTime(invitation.expires_at)}</small></div><button class="icon-button delete" data-cancel-invitation="${invitation.id}">Cancel</button></div>`).join("") || `<p class="muted">No pending invitations.</p>`;
   $("#household-settings-card").hidden = !canAdminister;
@@ -344,8 +374,20 @@ async function loadIncomes() {
 }
 
 async function loadReceipts() {
-  state.receipts = await api("/receipts?limit=100");
+  await api("/recurring-expenses/generate-due", { method: "POST" });
+  state.recurring = await api("/recurring-expenses");
+  const query = $("#receipt-search-form")?.elements.q.value.trim() || "";
+  state.receipts = await api(`/receipts?limit=100${query ? `&q=${encodeURIComponent(query)}` : ""}`);
   renderReceiptIndex();
+  renderRecurring();
+}
+
+function renderRecurring() {
+  $("#recurring-list").innerHTML = state.recurring.map((entry) => `<div class="setting-item"><div class="line-copy"><strong>${escapeHtml(entry.name)}</strong><small>${money(entry.amount, entry.currency)} · ${titleCase(entry.category)} · next ${formatDate(entry.next_occurrence_date)} · ${entry.is_active ? "active" : "paused"}</small></div><div class="member-actions"><button class="icon-button" data-edit-recurring="${entry.id}">Edit</button><button class="icon-button delete" data-delete-recurring="${entry.id}">Delete</button></div></div>`).join("") || `<p class="muted">No recurring expenses.</p>`;
+}
+
+function resetRecurringForm() {
+  const form = $("#recurring-form"); form.reset(); form.elements.edit_id.value = ""; form.elements.currency.value = activeCurrency(); form.elements.next_occurrence_date.value = today(); form.elements.is_active.checked = true; $("[data-cancel-recurring]").hidden = true;
 }
 
 function dashboardPeriod() {
@@ -393,6 +435,19 @@ function renderDashboard() {
   renderCategoryChart(data);
   renderMerchantChart();
   renderProducts(data);
+  renderGroceryFamilies(data);
+  renderSpendingPattern(data);
+}
+
+function renderGroceryFamilies(data) {
+  $("#grocery-family-chart").innerHTML = data.grocery_families.length ? data.grocery_families.map((entry, index) => `<div class="rank-item"><span class="rank-number">${index + 1}</span><span class="rank-copy"><strong>${escapeHtml(entry.label)}</strong><small>${entry.percentage}% of categorized groceries</small></span><strong>${money(entry.amount, data.currency)}</strong></div>`).join("") : `<div class="chart-empty">Confirm product matches to build Milk, Pizza and other grocery families.</div>`;
+}
+
+function renderSpendingPattern(data) {
+  const period = $("#spending-pattern-period").value;
+  const points = period === "day" ? data.daily_spending : period === "week" ? data.weekly_spending : data.monthly_trend.map((item) => ({ label: item.label, amount: item.expense }));
+  const maximum = Math.max(1, ...points.map((point) => Number(point.amount)));
+  $("#spending-pattern-chart").innerHTML = points.map((point) => `<div class="pattern-column" title="${escapeHtml(point.label)}: ${money(point.amount, data.currency)}"><i style="height:${Math.max(1, Number(point.amount) / maximum * 100)}%"></i><small>${escapeHtml(point.label)}</small></div>`).join("");
 }
 
 function renderTrendChart(data) {
@@ -578,6 +633,15 @@ function resetIncomeForm() {
 }
 
 function bindEvents() {
+  document.addEventListener("click", (event) => {
+    const toggle = event.target.closest("[data-toggle-password]");
+    if (!toggle) return;
+    const input = toggle.closest(".password-field").querySelector("input");
+    const showing = input.type === "text";
+    input.type = showing ? "password" : "text";
+    toggle.textContent = showing ? "Show" : "Hide";
+    toggle.setAttribute("aria-label", `${showing ? "Show" : "Hide"} password`);
+  });
   const dashboardNow = new Date();
   const periodForm = $("#dashboard-period-form");
   periodForm.elements.month.innerHTML = Array.from({ length: 12 }, (_, index) => `<option value="${index + 1}">${new Intl.DateTimeFormat("en", { month: "long" }).format(new Date(2026, index, 1))}</option>`).join("");
@@ -659,12 +723,16 @@ function bindEvents() {
   $$(".nav-button[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   $("#dashboard-period-form").addEventListener("change", () => loadDashboard().catch((error) => notify(error.message, true)));
   $("#merchant-period").addEventListener("change", renderMerchantChart);
+  $("#spending-pattern-period").addEventListener("change", () => renderSpendingPattern(state.dashboard));
+  $("#receipt-search-form").addEventListener("submit", async (event) => { event.preventDefault(); await loadReceipts(); });
+  $("[data-clear-receipt-search]").addEventListener("click", async () => { $("#receipt-search-form").reset(); await loadReceipts(); });
   $("#export-dashboard-csv").addEventListener("click", () => {
     const { year, month } = dashboardPeriod();
     window.location.assign(`/dashboard/export.csv?year=${year}&month=${month}`);
   });
   $("#print-dashboard").addEventListener("click", () => window.print());
   $("#show-capture-receipt").addEventListener("click", () => {
+    history.replaceState(null, "", `${location.pathname}#receipts/scan`);
     $("#receipt-create-form").hidden = true;
     $("#capture-review").hidden = true;
     $("#receipt-capture-form").hidden = false;
@@ -676,26 +744,36 @@ function bindEvents() {
     form.elements.purchase_date.value = today();
     form.elements.currency.value = activeCurrency();
     $("#capture-merchant-hint").hidden = true;
+    $("#auto-recognize-products-option").hidden = true;
   });
   $("[data-cancel-create]").addEventListener("click", () => {
     $("#receipt-create-form").hidden = true;
     if (state.capture) $("#capture-review").hidden = false;
   });
-  $("[data-cancel-capture]").addEventListener("click", () => { $("#receipt-capture-form").hidden = true; });
-  $("#receipt-capture-form input[name=file]").addEventListener("change", (event) => {
-    const file = event.currentTarget.files?.[0];
+  $("[data-cancel-capture]").addEventListener("click", () => {
+    $("#receipt-capture-form").hidden = true;
+    history.replaceState(null, "", location.pathname);
+  });
+  const receiptImageInputs = [...document.querySelectorAll("[data-receipt-image]")];
+  receiptImageInputs.forEach((input) => input.addEventListener("change", (event) => {
+    const file = event.currentTarget.files?.[0] || null;
+    selectedReceiptImage = file;
+    receiptImageInputs.filter((item) => item !== event.currentTarget).forEach((item) => { item.value = ""; });
     const preview = $("#capture-preview");
     if (!file) { preview.hidden = true; preview.removeAttribute("src"); return; }
     preview.src = URL.createObjectURL(file);
     preview.hidden = false;
-  });
+  }));
   $("#receipt-capture-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
+    if (!selectedReceiptImage) { notify("Choose or take a receipt image first", "error"); return; }
     const button = form.querySelector("button[type=submit]");
     button.disabled = true; button.textContent = "Reading receipt…";
     try {
-      const uploaded = await run(() => api("/receipt-captures", { method: "POST", body: new FormData(form) }), null);
+      const body = new FormData();
+      body.append("file", selectedReceiptImage);
+      const uploaded = await run(() => api("/receipt-captures", { method: "POST", body }), null);
       state.capture = await run(() => api(`/receipt-captures/${uploaded.id}/ocr`, { method: "POST" }), uploaded.ocr_status === "pending" ? "Receipt image uploaded" : null);
       renderCaptureReview();
     } catch (_) { /* run() already displayed the error. */ }
@@ -729,8 +807,22 @@ function bindEvents() {
 
   $("#receipt-create-form").addEventListener("submit", async (event) => {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
+    const recognizeProducts = data.get("auto_recognize_products") === "on";
     const receipt = await run(() => api("/receipts", { method: "POST", body: JSON.stringify({ capture_id: data.get("capture_id") || null, merchant_id: data.get("merchant_id") || null, payment_method_id: data.get("payment_method_id") || null, category: data.get("category"), receipt_number: data.get("receipt_number") || null, purchase_date: data.get("purchase_date"), stated_total: data.get("stated_total"), currency: String(data.get("currency")).toUpperCase(), notes: data.get("notes") || null }) }), "Receipt created").catch(() => null);
-    if (receipt) { form.reset(); form.hidden = true; resetCaptureUi(); await loadReceipts(); await openReceipt(receipt.id); }
+    if (receipt) { form.reset(); form.hidden = true; resetCaptureUi(); await loadReceipts(); await openReceipt(receipt.id); if (recognizeProducts) await window.productIntelligence.recognizeAll(window.expenseApp); }
+  });
+
+  $("#recurring-form").addEventListener("submit", async (event) => {
+    event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const id = data.get("edit_id");
+    const payload = { name: data.get("name"), merchant_id: data.get("merchant_id") || null, payment_method_id: data.get("payment_method_id") || null, category: data.get("category"), amount: data.get("amount"), currency: String(data.get("currency")).toUpperCase(), day_of_month: Number(data.get("day_of_month")), next_occurrence_date: data.get("next_occurrence_date"), notes: data.get("notes") || null, is_active: data.get("is_active") === "on" };
+    const saved = await run(() => api(id ? `/recurring-expenses/${id}` : "/recurring-expenses", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }), "Recurring expense saved").catch(() => null);
+    if (saved) { resetRecurringForm(); await loadReceipts(); }
+  });
+  $("[data-cancel-recurring]").addEventListener("click", resetRecurringForm);
+  $("#recurring-list").addEventListener("click", async (event) => {
+    const edit = event.target.closest("[data-edit-recurring]"); const remove = event.target.closest("[data-delete-recurring]");
+    if (edit) { const entry = state.recurring.find((item) => item.id === edit.dataset.editRecurring); const form = $("#recurring-form"); Object.entries(entry).forEach(([key, value]) => { if (form.elements[key] && form.elements[key].type !== "checkbox") form.elements[key].value = value ?? ""; }); form.elements.edit_id.value = entry.id; form.elements.is_active.checked = entry.is_active; $("[data-cancel-recurring]").hidden = false; form.scrollIntoView({ behavior: "smooth" }); }
+    if (remove && confirm("Delete this recurring template? Existing drafts remain.")) { const deleted = await run(() => api(`/recurring-expenses/${remove.dataset.deleteRecurring}`, { method: "DELETE" }), "Recurring expense deleted").catch(() => false); if (deleted !== false) await loadReceipts(); }
   });
 
   $("#receipt-edit-form").addEventListener("submit", async (event) => {
@@ -769,7 +861,7 @@ function bindEvents() {
     if (remove && confirm("Delete this payment?")) { const result = await run(() => api(`/receipts/${state.receipt.id}/payments/${remove.dataset.deletePayment}`, { method: "DELETE" }), "Payment deleted").catch(() => false); if (result !== false) await refreshReceipt(); }
   });
 
-  $("#approve-receipt").addEventListener("click", async () => { if (confirm("Approve this receipt? It can no longer be edited.")) { const result = await run(() => api(`/receipts/${state.receipt.id}/approve`, { method: "POST" }), "Receipt approved").catch(() => null); if (result) await refreshReceipt(); } });
+  $("#approve-receipt").addEventListener("click", async () => { if (confirm("Approve this receipt? It can no longer be edited.")) { const result = await run(() => api(`/receipts/${state.receipt.id}/approve`, { method: "POST" }), "Receipt approved").catch(() => null); if (result) { closeReceipt(); switchView("receipts"); } } });
   $("#void-receipt").addEventListener("click", async () => { const reason = prompt("Why is this receipt being voided? (optional)"); if (reason !== null) { const result = await run(() => api(`/receipts/${state.receipt.id}/void`, { method: "POST", body: JSON.stringify({ reason: reason || null }) }), "Receipt voided").catch(() => null); if (result) await refreshReceipt(); } });
 
   $("#merchant-form").addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const result = await run(() => api("/merchants", { method: "POST", body: JSON.stringify({ name: data.get("name"), address: data.get("address") || null }) }), "Merchant added").catch(() => null); if (result) { form.reset(); await loadSetup(); await loadReceipts(); } });
@@ -845,6 +937,20 @@ function bindEvents() {
     }
   });
   $("#member-list").addEventListener("click", async (event) => {
+    const reset = event.target.closest("[data-reset-password]");
+    if (reset) {
+      const password = prompt(`Enter a temporary password for ${reset.dataset.memberName} (minimum 12 characters):`);
+      if (password === null) return;
+      if (password.length < 12) { notify("Password must contain at least 12 characters", true); return; }
+      const confirmation = prompt("Enter the temporary password again:");
+      if (confirmation !== password) { notify("Passwords do not match", true); return; }
+      const changed = await run(
+        () => api(`/household/members/${reset.dataset.resetPassword}/password`, { method: "PUT", body: JSON.stringify({ password }) }),
+        "Password reset. The member must sign in again.",
+      ).catch(() => false);
+      if (changed !== false) await loadMembers();
+      return;
+    }
     const button = event.target.closest("[data-remove-member]");
     if (!button || !confirm("Remove this person from the household? Their historical records will be kept.")) return;
     const removed = await run(
@@ -895,6 +1001,11 @@ async function loadAuthenticatedData() {
   if (match) {
     switchView("receipts");
     await openReceipt(match[1]);
+  } else if (location.hash === "#receipts/scan") {
+    switchView("receipts");
+    $("#receipt-create-form").hidden = true;
+    $("#capture-review").hidden = true;
+    $("#receipt-capture-form").hidden = false;
   }
 }
 
@@ -912,4 +1023,5 @@ async function init() {
   }
 }
 
+window.expenseApp = { api, escapeHtml, notify, refreshReceipt, state };
 init();

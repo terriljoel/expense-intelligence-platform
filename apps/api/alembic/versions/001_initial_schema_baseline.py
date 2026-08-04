@@ -6,6 +6,9 @@ Create Date: 2026-07-22
 """
 
 from collections.abc import Sequence
+from pathlib import Path
+
+from alembic import op
 
 
 revision: str = "001_initial_schema"
@@ -15,7 +18,19 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """The schema was created by database/migrations/001_initial_schema.sql."""
+    """Create the baseline on a fresh database; existing stamped databases skip it."""
+
+    migration = next(
+        (
+            path
+            for root in Path(__file__).resolve().parents
+            if (path := root / "database" / "migrations" / "001_initial_schema.sql").is_file()
+        ),
+        None,
+    )
+    if migration is None:
+        raise RuntimeError("database/migrations/001_initial_schema.sql was not found")
+    op.execute(migration.read_text(encoding="utf-8"))
 
 
 def downgrade() -> None:

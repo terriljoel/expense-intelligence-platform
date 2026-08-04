@@ -33,7 +33,7 @@ class HouseholdInvitation(Base):
             name="household_invitations_email_normalized",
         ),
         CheckConstraint(
-            "role IN ('admin', 'member')",
+            "role = 'member'",
             name="household_invitations_role_valid",
         ),
         CheckConstraint(

@@ -48,4 +48,8 @@ class HouseholdUpdate(BaseModel):
 
 
 class MemberRoleUpdate(BaseModel):
-    role: Literal["owner", "admin", "member"]
+    role: Literal["owner", "member"]
+
+
+class MemberPasswordReset(BaseModel):
+    password: str = Field(min_length=12, max_length=128)

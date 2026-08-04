@@ -38,6 +38,7 @@ class AuthenticatedPrincipal:
     user_id: UUID
     household_id: UUID
     role: str
+    is_global_admin: bool
     email: str
     display_name: str
     expires_at: datetime
@@ -73,8 +74,7 @@ def authenticate_password(
         .order_by(
             case(
                 (HouseholdMember.role == "owner", 0),
-                (HouseholdMember.role == "admin", 1),
-                else_=2,
+                else_=1,
             ),
             HouseholdMember.joined_at,
         )
@@ -134,6 +134,7 @@ def resolve_auth_session(
         user_id=user.id,
         household_id=membership.household_id,
         role=membership.role,
+        is_global_admin=user.is_global_admin,
         email=user.email,
         display_name=user.display_name,
         expires_at=auth_session.expires_at,

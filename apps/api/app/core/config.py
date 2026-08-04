@@ -5,7 +5,12 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
+# PROJECT_ROOT = Path(__file__).resolve().parents[4]
+try:
+    PROJECT_ROOT = Path(__file__).resolve().parents[4]
+except IndexError:
+    # Inside the Docker container, the repository root maps to /app
+    PROJECT_ROOT = Path("/app")
 
 
 class Settings(BaseSettings):
@@ -39,6 +44,28 @@ class Settings(BaseSettings):
         ge=256 * 1024,
         le=500 * 1024 * 1024,
     )
+    product_enrichment_enabled: bool = True
+    product_enrichment_providers: str = "local"
+    product_auto_match_threshold: float = Field(default=0.92, ge=0, le=1)
+    product_review_threshold: float = Field(default=0.60, ge=0, le=1)
+    product_provider_timeout_seconds: int = Field(default=10, ge=1, le=60)
+    product_max_provider_requests: int = Field(default=3, ge=1, le=20)
+    product_cache_hours: int = Field(default=168, ge=1, le=8760)
+    product_fuzzy_match_threshold: float = Field(default=0.60, ge=0, le=1)
+    product_max_local_candidates: int = Field(default=5, ge=1, le=20)
+    product_max_external_candidates: int = Field(default=5, ge=1, le=20)
+    open_food_facts_base_url: str = "https://world.openfoodfacts.org"
+    search_a_licious_base_url: str = "https://search.openfoodfacts.org"
+    product_provider_user_agent: str = "expense-intelligence/0.1 (personal project)"
+    product_agent_enabled: bool = False
+    github_models_endpoint: str = "https://models.github.ai/inference"
+    github_models_model: str = "openai/gpt-4.1-mini"
+    github_models_token: str | None = Field(default=None, repr=False)
+    product_agent_timeout_seconds: int = Field(default=30, ge=1, le=120)
+    product_web_search_enabled: bool = False
+    tavily_api_key: str | None = Field(default=None, repr=False)
+    tavily_search_endpoint: str = "https://api.tavily.com/search"
+    tavily_max_results: int = Field(default=5, ge=1, le=10)
 
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",

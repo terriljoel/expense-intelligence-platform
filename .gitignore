@@ -12,3 +12,6 @@ data/receipt-images/
 docs/.$*.bkp
 docs/*.previous.md
 activate_venv.bat
+.env copy
+docker-compose-old.yml
+app-settings.json

@@ -17,6 +17,8 @@ from app.api.routes.receipts import router as receipts_router
 from app.api.routes.receipt_captures import router as receipt_captures_router
 from app.api.routes.maintenance import router as maintenance_router
 from app.api.routes.dashboard import router as dashboard_router
+from app.api.routes.products import router as products_router
+from app.api.routes.recurring import router as recurring_router
 from app.db.session import engine
 
 
@@ -45,6 +47,8 @@ app.include_router(receipts_router)
 app.include_router(receipt_captures_router)
 app.include_router(maintenance_router)
 app.include_router(dashboard_router)
+app.include_router(products_router)
+app.include_router(recurring_router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 

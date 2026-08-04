@@ -15,6 +15,7 @@ class CurrentPrincipal:
     user_id: UUID
     household_id: UUID
     role: str
+    is_global_admin: bool = False
 
 
 def reject_cross_site_request(request: Request) -> None:
@@ -32,7 +33,11 @@ def reject_cross_site_request(request: Request) -> None:
         parts = urlsplit(request.headers["referer"])
         source = f"{parts.scheme}://{parts.netloc}"
     if source is not None:
-        target = f"{request.url.scheme}://{request.headers.get('host', '')}"
+        forwarded_host = request.headers.get("x-forwarded-host")
+        forwarded_proto = request.headers.get("x-forwarded-proto")
+        host = forwarded_host or request.headers.get("host", "")
+        scheme = forwarded_proto or request.url.scheme
+        target = f"{scheme}://{host}"
         if source.rstrip("/") != target.rstrip("/"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -61,15 +66,27 @@ def get_current_principal(
         user_id=authenticated.user_id,
         household_id=authenticated.household_id,
         role=authenticated.role,
+        is_global_admin=authenticated.is_global_admin,
     )
 
 
 def require_household_admin(
     principal: CurrentPrincipal = Depends(get_current_principal),
 ) -> CurrentPrincipal:
-    if principal.role not in {"owner", "admin"}:
+    if principal.role != "owner" and not principal.is_global_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Owner or admin role required",
+            detail="Household owner or global administrator required",
+        )
+    return principal
+
+
+def require_global_admin(
+    principal: CurrentPrincipal = Depends(get_current_principal),
+) -> CurrentPrincipal:
+    if not principal.is_global_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Global administrator role required",
         )
     return principal

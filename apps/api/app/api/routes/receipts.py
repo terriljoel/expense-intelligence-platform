@@ -60,9 +60,7 @@ from app.services.receipt import (
 router = APIRouter(prefix="/receipts", tags=["receipts"])
 
 
-def _receipt_response(
-    session: Session, receipt: Receipt
-) -> ReceiptResponse:
+def _receipt_response(session: Session, receipt: Receipt) -> ReceiptResponse:
     creator = session.get(User, receipt.created_by_user_id)
     return ReceiptResponse.model_validate(receipt).model_copy(
         update={
@@ -84,12 +82,8 @@ def _payment_response(
     )
     return ReceiptPaymentResponse.model_validate(payment).model_copy(
         update={
-            "payer_display_name": (
-                payer.display_name if payer is not None else None
-            ),
-            "payment_method_name": (
-                method.name if method is not None else None
-            ),
+            "payer_display_name": (payer.display_name if payer is not None else None),
+            "payment_method_name": (method.name if method is not None else None),
             "payment_method_last_four": (
                 method.last_four if method is not None else None
             ),
@@ -164,6 +158,7 @@ def post_receipt(
 def get_receipts(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    q: str | None = Query(default=None, max_length=100),
     principal: CurrentPrincipal = Depends(get_current_principal),
     session: Session = Depends(get_db_session),
 ) -> list[ReceiptResponse]:
@@ -172,6 +167,7 @@ def get_receipts(
         household_id=principal.household_id,
         limit=limit,
         offset=offset,
+        query=q,
     )
     return [_receipt_response(session, receipt) for receipt in receipts]
 
@@ -455,9 +451,7 @@ def get_receipt_payments(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Receipt not found",
         ) from exc
-    return [
-        _payment_response(session, payment) for payment in payments
-    ]
+    return [_payment_response(session, payment) for payment in payments]
 
 
 @router.patch(

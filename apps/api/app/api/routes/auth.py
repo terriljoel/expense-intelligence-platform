@@ -73,6 +73,7 @@ def login(
         email=user.email or payload.email,
         display_name=user.display_name,
         role=membership.role,
+        is_global_admin=user.is_global_admin,
         session_expires_at=auth_session.expires_at,
     )
 
@@ -116,6 +117,7 @@ def get_me(
         email=authenticated.email,
         display_name=authenticated.display_name,
         role=authenticated.role,
+        is_global_admin=authenticated.is_global_admin,
         session_expires_at=authenticated.expires_at,
     )
 
@@ -210,5 +212,6 @@ def switch_household(
         email=authenticated.email,
         display_name=authenticated.display_name,
         role=authenticated.role,
+        is_global_admin=authenticated.is_global_admin,
         session_expires_at=authenticated.expires_at,
     )

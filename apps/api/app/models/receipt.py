@@ -86,6 +86,11 @@ class Receipt(Base):
             text("purchase_date DESC"),
         ),
         Index("receipts_merchant_idx", "household_id", "merchant_id"),
+        UniqueConstraint(
+            "recurring_template_id",
+            "recurring_occurrence_date",
+            name="receipts_recurring_occurrence_unique",
+        ),
         Index(
             "receipts_number_identity_unique",
             "household_id",
@@ -110,6 +115,10 @@ class Receipt(Base):
         nullable=False,
     )
     merchant_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    recurring_template_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("recurring_expenses.id", ondelete="SET NULL")
+    )
+    recurring_occurrence_date: Mapped[date | None] = mapped_column(Date)
     created_by_user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), nullable=False
     )
@@ -169,11 +178,19 @@ class ReceiptItem(Base):
         UniqueConstraint(
             "receipt_id", "position", name="receipt_items_position_unique"
         ),
+        UniqueConstraint(
+            "id", "household_id", name="receipt_items_id_household_unique"
+        ),
         ForeignKeyConstraint(
             ["receipt_id", "household_id"],
             ["receipts.id", "receipts.household_id"],
             name="receipt_items_receipt_scope_fk",
             ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["product_id", "household_id"],
+            ["products.id", "products.household_id"],
+            name="receipt_items_product_scope_fk",
         ),
         CheckConstraint("position > 0", name="receipt_items_position_positive"),
         CheckConstraint(
@@ -201,6 +218,14 @@ class ReceiptItem(Base):
             name="receipt_items_amount_sign_valid",
         ),
         Index("receipt_items_receipt_position_idx", "receipt_id", "position"),
+        CheckConstraint(
+            "product_match_status IN ('unmatched', 'suggested', 'confirmed', 'rejected')",
+            name="receipt_items_product_match_status_valid",
+        ),
+        CheckConstraint(
+            "product_match_confidence IS NULL OR (product_match_confidence >= 0 AND product_match_confidence <= 1)",
+            name="receipt_items_product_match_confidence_valid",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -216,6 +241,13 @@ class ReceiptItem(Base):
     )
     raw_description: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_description: Mapped[str] = mapped_column(Text, nullable=False)
+    product_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    product_match_status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'unmatched'")
+    )
+    product_match_method: Mapped[str | None] = mapped_column(Text)
+    product_match_confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
     raw_quantity_text: Mapped[str | None] = mapped_column(Text)
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
     unit_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4))

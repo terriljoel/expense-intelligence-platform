@@ -6,8 +6,9 @@
     <meta name="theme-color" content="#18392b" />
     <title>Expense Intelligence</title>
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260723-dashboard-mobile-2" />
-    <script src="/static/app.js?v=20260723-dashboard-mobile-2" defer></script>
+    <link rel="stylesheet" href="/static/styles.css?v=20260804-compact-search" />
+    <script src="/static/app.js?v=20260804-analytics-search" defer></script>
+    <script src="/static/js/product-intelligence.js?v=20260802-1" defer></script>
   </head>
   <body>
     <section id="login-view" class="login-screen">
@@ -19,7 +20,7 @@
         <div id="login-error" class="notice error" role="alert" hidden></div>
         <form id="login-form" class="compact-form">
           <label>Email<input name="email" type="email" autocomplete="username" required /></label>
-          <label>Password<input name="password" type="password" autocomplete="current-password" maxlength="128" required /></label>
+          <label>Password<span class="password-field"><input name="password" type="password" autocomplete="current-password" maxlength="128" required /><button type="button" data-toggle-password aria-label="Show password">Show</button></span></label>
           <button class="primary" type="submit">Sign in</button>
         </form>
       </div>
@@ -34,14 +35,14 @@
         <div id="invitation-error" class="notice error" role="alert" hidden></div>
         <form id="invitation-accept-form" class="compact-form" hidden>
           <label>Display name<input name="display_name" maxlength="200" autocomplete="name" required /></label>
-          <label>Password<input name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required /></label>
-          <label>Repeat password<input name="password_confirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" required /></label>
+          <label>Password<span class="password-field"><input name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required /><button type="button" data-toggle-password aria-label="Show password">Show</button></span></label>
+          <label>Repeat password<span class="password-field"><input name="password_confirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" required /><button type="button" data-toggle-password aria-label="Show password">Show</button></span></label>
           <button class="primary" type="submit">Create account</button>
         </form>
         <form id="invitation-existing-form" class="compact-form" hidden>
           <p class="muted">This email already has an account. Sign in to join this additional household.</p>
           <label>Email<input name="email" type="email" autocomplete="username" readonly required /></label>
-          <label>Password<input name="password" type="password" autocomplete="current-password" maxlength="128" required /></label>
+          <label>Password<span class="password-field"><input name="password" type="password" autocomplete="current-password" maxlength="128" required /><button type="button" data-toggle-password aria-label="Show password">Show</button></span></label>
           <button class="primary" type="submit">Sign in and join</button>
         </form>
         <button id="invitation-back" class="text-button" type="button">Back to login</button>
@@ -106,6 +107,14 @@
             <div class="section-heading"><div><p class="eyebrow">Shopping habits</p><h2>Most purchased products</h2></div><span class="muted">Ranked by purchase frequency</span></div>
             <div id="top-products-table" class="product-table"></div>
           </section>
+          <section class="card chart-card">
+            <div class="section-heading"><div><p class="eyebrow">Groceries</p><h2>Product-family breakdown</h2></div><span class="muted">Milk, pizza and more</span></div>
+            <div id="grocery-family-chart" class="rank-list"></div>
+          </section>
+          <section class="card chart-card">
+            <div class="section-heading"><div><p class="eyebrow">Spending pattern</p><h2>When you spend</h2></div><select id="spending-pattern-period"><option value="day">Day</option><option value="week">Week</option><option value="year">Year</option></select></div>
+            <div id="spending-pattern-chart" class="pattern-chart"></div>
+          </section>
         </div>
       </section>
 
@@ -118,10 +127,18 @@
               <button id="show-create-receipt" class="secondary">Manual entry</button>
             </div>
           </div>
+          <form id="receipt-search-form" class="inline-fields receipt-search">
+            <label>Search receipts or expenses<input name="q" type="search" maxlength="100" placeholder="Merchant, product, category, notes or receipt number" /></label>
+            <button class="secondary" type="submit">Search</button>
+            <button class="text-button" data-clear-receipt-search type="button">Clear</button>
+          </form>
 
           <form id="receipt-capture-form" class="card form-card" hidden>
-            <div class="section-heading"><div><h2>Capture receipt</h2><p class="muted">Take a clear, straight photo with the entire receipt visible.</p></div><button type="button" class="text-button" data-cancel-capture>Cancel</button></div>
-            <label class="capture-dropzone">Receipt image<input name="file" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required /></label>
+            <div class="section-heading"><div><h2>Add receipt image</h2><p class="muted">Take a new photo or select an existing receipt.</p></div><button type="button" class="text-button" data-cancel-capture>Cancel</button></div>
+            <div class="capture-source-grid">
+              <label class="capture-dropzone">Take photo<input data-receipt-image type="file" accept="image/jpeg,image/png,image/webp" capture="environment" /></label>
+              <label class="capture-dropzone">Choose from gallery<input data-receipt-image type="file" accept="image/jpeg,image/png,image/webp" /></label>
+            </div>
             <img id="capture-preview" class="capture-preview" alt="Receipt preview" hidden />
             <button class="primary" type="submit">Upload and read text</button>
           </form>
@@ -154,9 +171,31 @@
               <label>Total<input name="stated_total" type="number" min="0" step="0.01" inputmode="decimal" required /></label>
               <label>Currency<input name="currency" value="EUR" maxlength="3" pattern="[A-Z]{3}" required /></label>
               <label class="wide">Notes<textarea name="notes" rows="2" placeholder="Optional"></textarea></label>
+              <label id="auto-recognize-products-option" class="wide checkbox-row" hidden><input name="auto_recognize_products" type="checkbox" /> Recognize all OCR product items automatically after creating the draft</label>
             </div>
             <button class="primary" type="submit">Create and open</button>
           </form>
+
+          <details class="card" id="recurring-card">
+            <summary><strong>Recurring expenses</strong> <span class="muted">Monthly drafts for rent, bills and subscriptions</span></summary>
+            <form id="recurring-form" class="compact-form">
+              <input name="edit_id" type="hidden" />
+              <div class="form-grid">
+                <label>Name<input name="name" required placeholder="Apartment rent" /></label>
+                <label>Category<select name="category" data-expense-category></select></label>
+                <label>Merchant<select name="merchant_id" data-merchant-select></select></label>
+                <label>Payment method<select name="payment_method_id" data-payment-select></select></label>
+                <label>Amount<input name="amount" type="number" min="0" step="0.01" required /></label>
+                <label>Currency<input name="currency" value="EUR" maxlength="3" required /></label>
+                <label>Day each month<input name="day_of_month" type="number" min="1" max="31" value="1" required /></label>
+                <label>First/next draft<input name="next_occurrence_date" type="date" required /></label>
+                <label class="wide">Notes<textarea name="notes" rows="2"></textarea></label>
+                <label class="checkbox-row"><input name="is_active" type="checkbox" checked /> Active</label>
+              </div>
+              <div class="action-row"><button class="primary" type="submit">Save recurring expense</button><button class="secondary" data-cancel-recurring type="button" hidden>Cancel edit</button></div>
+            </form>
+            <div id="recurring-list" class="setting-list"></div>
+          </details>
 
           <div id="receipt-summary" class="summary-grid"></div>
           <div id="receipt-list" class="receipt-list" aria-live="polite"></div>
@@ -271,7 +310,7 @@
           </section>
         </div>
         <section id="maintenance-card" class="card" hidden>
-          <div class="section-heading"><h2>Data maintenance</h2><span class="muted">Owner and admin</span></div>
+          <div class="section-heading"><h2>Data maintenance</h2><span class="muted">Household owner or global admin</span></div>
           <p class="muted">Archive or clear this household's financial activity. Users, members, merchants, payment methods, and household settings are preserved.</p>
           <div id="maintenance-counts" class="setting-list"></div>
           <div class="inline-fields">
@@ -293,7 +332,7 @@
           <button id="leave-household-button" class="danger" type="button">Leave household</button>
         </div>
         <section id="household-settings-card" class="card">
-          <div class="section-heading"><h2>Household settings</h2><span class="muted">Owner and admin</span></div>
+          <div class="section-heading"><h2>Household settings</h2><span class="muted">Household owner or global admin</span></div>
           <form id="household-settings-form" class="inline-fields">
             <label>Name<input name="name" maxlength="200" required /></label>
             <label>Default currency<input name="default_currency" minlength="3" maxlength="3" pattern="[A-Za-z]{3}" required /></label>
@@ -311,7 +350,7 @@
             <p class="muted">Create a single-use link that expires automatically.</p>
             <form id="invitation-create-form" class="compact-form">
               <label>Email<input name="email" type="email" maxlength="320" required /></label>
-              <label>Role<select name="role"><option value="member">Member</option><option value="admin">Admin</option></select></label>
+              <input name="role" type="hidden" value="member" />
               <button class="primary" type="submit">Create invitation</button>
             </form>
             <div id="invitation-link-box" class="invite-link-box" hidden>

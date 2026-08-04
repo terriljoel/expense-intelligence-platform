@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -10,7 +11,8 @@ from app.api.dependencies import CurrentPrincipal, get_current_principal
 from app.db.seed import SeedResult, seed_development_data
 from app.db.session import engine, get_db_session
 from app.main import app
-from app.models import Household, HouseholdMember, User
+from app.models import AuthSession, Household, HouseholdMember, User, UserCredential
+from app.services.auth import password_hash
 from app.services.invitation import (
     accept_existing_user_invitation,
     create_invitation,
@@ -86,16 +88,10 @@ def test_owner_can_manage_settings_roles_and_remove_member_safely(
     )
     promoted = context.client.patch(
         f"/household/members/{member.id}",
-        json={"role": "admin"},
+        json={"role": "owner"},
     )
-
-    app.dependency_overrides[get_current_principal] = lambda: CurrentPrincipal(
-        user_id=member.id,
-        household_id=context.seed.household_id,
-        role="admin",
-    )
-    admin_cannot_change_owner = context.client.patch(
-        f"/household/members/{context.seed.user_id}",
+    demoted = context.client.patch(
+        f"/household/members/{member.id}",
         json={"role": "member"},
     )
     created_receipt = context.client.post(
@@ -120,8 +116,8 @@ def test_owner_can_manage_settings_roles_and_remove_member_safely(
     assert settings.json()["name"] == "Managed Household"
     assert settings.json()["default_currency"] == "GBP"
     assert promoted.status_code == 200
-    assert promoted.json()["role"] == "admin"
-    assert admin_cannot_change_owner.status_code == 403
+    assert promoted.json()["role"] == "owner"
+    assert demoted.status_code == 200
     assert created_receipt.status_code == 201
     assert removed.status_code == 204
     assert membership.is_active is False
@@ -198,3 +194,84 @@ def test_removed_member_can_be_invited_back(
     assert accepted.id == invitation.id
     assert membership.is_active is True
     assert membership.role == "member"
+
+
+def test_owner_can_reset_single_household_member_password_and_revoke_sessions(
+    household_admin_context: HouseholdAdminContext,
+) -> None:
+    context = household_admin_context
+    member, _ = _add_member(
+        context.session,
+        household_id=context.seed.household_id,
+    )
+    credential = UserCredential(
+        user_id=member.id,
+        password_hash=password_hash.hash("old-member-password"),
+    )
+    context.session.add(credential)
+    context.session.add(
+        AuthSession(
+            household_id=context.seed.household_id,
+            user_id=member.id,
+            token_hash="a" * 64,
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+    )
+    context.session.flush()
+    app.dependency_overrides[get_current_principal] = lambda: CurrentPrincipal(
+        user_id=context.seed.user_id,
+        household_id=context.seed.household_id,
+        role="owner",
+        is_global_admin=True,
+    )
+
+    response = context.client.put(
+        f"/household/members/{member.id}/password",
+        json={"password": "new-member-password"},
+    )
+    context.session.refresh(credential)
+
+    assert response.status_code == 204
+    assert password_hash.verify("new-member-password", credential.password_hash)
+    assert (
+        context.session.query(AuthSession)
+        .filter(AuthSession.user_id == member.id)
+        .count()
+        == 0
+    )
+
+
+def test_global_admin_can_reset_multi_household_account(
+    household_admin_context: HouseholdAdminContext,
+) -> None:
+    context = household_admin_context
+    member, _ = _add_member(
+        context.session,
+        household_id=context.seed.household_id,
+    )
+    other = Household(name="Other Household", default_currency="EUR")
+    context.session.add(other)
+    context.session.flush()
+    app.dependency_overrides[get_current_principal] = lambda: CurrentPrincipal(
+        user_id=context.seed.user_id,
+        household_id=context.seed.household_id,
+        role="owner",
+        is_global_admin=True,
+    )
+    context.session.add(
+        HouseholdMember(household_id=other.id, user_id=member.id, role="member")
+    )
+    context.session.add(
+        UserCredential(
+            user_id=member.id,
+            password_hash=password_hash.hash("old-member-password"),
+        )
+    )
+    context.session.flush()
+
+    response = context.client.put(
+        f"/household/members/{member.id}/password",
+        json={"password": "new-member-password"},
+    )
+
+    assert response.status_code == 204

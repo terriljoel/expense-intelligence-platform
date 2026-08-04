@@ -96,12 +96,6 @@ def update_member_role(
         household_id=household_id,
         user_id=target_user_id,
     )
-    if actor_role == "admin" and (
-        target.role == "owner"
-        or new_role == "owner"
-        or target.user_id == actor_user_id
-    ):
-        raise HouseholdPermissionError
     if target.role == "owner" and new_role != "owner":
         _ensure_not_last_owner(
             session,
@@ -128,8 +122,6 @@ def deactivate_member(
         household_id=household_id,
         user_id=target_user_id,
     )
-    if actor_role == "admin" and target.role == "owner":
-        raise HouseholdPermissionError
     _ensure_not_last_owner(
         session,
         household_id=household_id,

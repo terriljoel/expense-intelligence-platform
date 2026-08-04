@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class DashboardMetric(BaseModel):
@@ -37,6 +37,17 @@ class DashboardTrendPoint(BaseModel):
     income: Decimal
 
 
+class DashboardSpendPoint(BaseModel):
+    label: str
+    amount: Decimal
+
+
+class DashboardBreakdown(BaseModel):
+    label: str
+    amount: Decimal
+    percentage: Decimal
+
+
 class DashboardResponse(BaseModel):
     year: int
     month: int
@@ -57,4 +68,6 @@ class DashboardResponse(BaseModel):
     top_merchants_month: list[DashboardMerchant]
     top_merchants_year: list[DashboardMerchant]
     top_products: list[DashboardProduct]
-
+    grocery_families: list[DashboardBreakdown] = Field(default_factory=list)
+    daily_spending: list[DashboardSpendPoint] = Field(default_factory=list)
+    weekly_spending: list[DashboardSpendPoint] = Field(default_factory=list)

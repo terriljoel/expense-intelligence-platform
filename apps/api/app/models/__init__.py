@@ -5,8 +5,15 @@ from app.models.income import IncomeEntry
 from app.models.invitation import HouseholdInvitation
 from app.models.merchant import Merchant
 from app.models.payment_method import PaymentMethod
+from app.models.product import (
+    Product,
+    ProductAlias,
+    ProductEnrichmentRun,
+    ProductEvidence,
+)
 from app.models.receipt import Receipt, ReceiptItem, ReceiptPayment
 from app.models.receipt_capture import ReceiptCapture
+from app.models.recurring import RecurringExpense
 from app.models.user import User
 
 __all__ = [
@@ -18,10 +25,15 @@ __all__ = [
     "HouseholdInvitation",
     "Merchant",
     "PaymentMethod",
+    "Product",
+    "ProductAlias",
+    "ProductEnrichmentRun",
+    "ProductEvidence",
     "Receipt",
     "ReceiptCapture",
     "ReceiptItem",
     "ReceiptPayment",
+    "RecurringExpense",
     "User",
     "UserCredential",
 ]

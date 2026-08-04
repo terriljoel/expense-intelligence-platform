@@ -96,6 +96,8 @@ class ReceiptResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    recurring_template_id: UUID | None = None
+    recurring_occurrence_date: date | None = None
     merchant_id: UUID | None
     created_by_user_id: UUID
     created_by_display_name: str | None = None
@@ -178,6 +180,11 @@ class ReceiptItemResponse(BaseModel):
     line_type: str
     raw_description: str | None
     description: str
+    normalized_description: str
+    product_id: UUID | None
+    product_match_status: str
+    product_match_method: str | None
+    product_match_confidence: Decimal | None
     raw_quantity_text: str | None
     quantity: Decimal | None
     unit_price: Decimal | None

@@ -8,9 +8,11 @@ pydantic-settings==2.14.2
 pwdlib[argon2]==0.3.0
 python-multipart==0.0.32
 Pillow==12.1.1
+zxing-cpp==3.0.0
 azure-ai-documentintelligence==1.0.2
 azure-storage-blob==12.28.0
 azure-identity==1.25.2
+langgraph>=1.0,<2.0
 
 # Test and quality dependencies
 httpx2==2.7.0

@@ -73,7 +73,7 @@ class HouseholdMember(Base):
     __tablename__ = "household_members"
     __table_args__ = (
         CheckConstraint(
-            "role IN ('owner', 'admin', 'member')",
+            "role IN ('owner', 'member')",
             name="household_members_role_valid",
         ),
     )

@@ -23,6 +23,7 @@ class AuthenticatedUserResponse(BaseModel):
     email: str
     display_name: str
     role: str
+    is_global_admin: bool
     session_expires_at: datetime
 
 
