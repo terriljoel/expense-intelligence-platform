@@ -94,6 +94,11 @@ def test_owner_can_manage_settings_roles_and_remove_member_safely(
         f"/household/members/{member.id}",
         json={"role": "member"},
     )
+    app.dependency_overrides[get_current_principal] = lambda: CurrentPrincipal(
+        user_id=member.id,
+        household_id=context.seed.household_id,
+        role="member",
+    )
     created_receipt = context.client.post(
         "/receipts",
         json={

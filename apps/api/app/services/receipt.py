@@ -313,12 +313,6 @@ def create_receipt(
     )
     if payment_method_id is not None and selected_method is None:
         raise PaymentMethodNotFoundError
-    if (
-        selected_method is None
-        and payment_method_id is None
-        and len(active_methods) == 1
-    ):
-        selected_method = active_methods[0]
     if selected_method is not None and stated_total > 0:
         add_receipt_payment(
             session,
@@ -577,14 +571,20 @@ def update_receipt_item(
         changes["product_match_status"] = "unmatched"
         changes["product_match_method"] = None
         changes["product_match_confidence"] = None
-        changed_fields.extend(
-            [
-                "normalized_description",
-                "product_id",
-                "product_match_status",
-                "product_match_method",
-                "product_match_confidence",
-            ]
+        changed_fields.update(
+            _field_changes(
+                item,
+                {
+                    field_name: changes[field_name]
+                    for field_name in (
+                        "normalized_description",
+                        "product_id",
+                        "product_match_status",
+                        "product_match_method",
+                        "product_match_confidence",
+                    )
+                },
+            )
         )
     for field_name in changed_fields:
         setattr(item, field_name, changes[field_name])

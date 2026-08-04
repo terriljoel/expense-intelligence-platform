@@ -18,6 +18,7 @@ from app.models import (
     ReceiptCapture,
     ReceiptItem,
     ReceiptPayment,
+    RecurringExpense,
     User,
     UserCredential,
 )
@@ -33,8 +34,9 @@ def test_all_expected_tables_are_registered() -> None:
         "payment_methods",
         "receipts",
         "receipt_items",
-            "receipt_payments",
-            "receipt_captures",
+        "receipt_payments",
+        "receipt_captures",
+        "recurring_expenses",
         "products",
         "product_aliases",
         "product_enrichment_runs",
@@ -71,6 +73,7 @@ def test_models_use_expected_table_names() -> None:
         ReceiptCapture,
         ReceiptItem,
         ReceiptPayment,
+        RecurringExpense,
         UserCredential,
     )
 
