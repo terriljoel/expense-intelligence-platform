@@ -14,7 +14,12 @@ from app.product_intelligence.contracts import (
     ProductQuery,
 )
 from app.product_intelligence.rankers import CandidateRanker
-from app.product_intelligence.registry import configured_providers, configured_ranker
+from app.product_intelligence.registry import (
+    configured_extractor,
+    configured_providers,
+    configured_ranker,
+)
+from app.product_intelligence.providers.tavily import extract_tavily_candidate
 from app.product_intelligence.taxonomy import infer_family
 from app.services.product import (
     ProductMatch,
@@ -24,6 +29,7 @@ from app.services.product import (
     link_product_match,
     match_receipt_item,
 )
+from app.services.knowledge import record_candidate_knowledge
 from app.services.text_normalization import normalize_product_name
 
 
@@ -51,17 +57,21 @@ def enrich_receipt_item(
     item_id: UUID,
     barcode: str | None,
     settings: Settings,
+    description: str | None = None,
+    refresh_existing: bool = False,
     providers: list[ProductProvider] | None = None,
     ranker: CandidateRanker | None = None,
 ) -> EnrichmentResult:
     local = match_receipt_item(session, household_id=household_id, item_id=item_id)
-    if local.product:
+    if local.product and not refresh_existing:
         return EnrichmentResult(None, "completed", local, [], [])
 
     item, receipt = get_item_context(session, household_id, item_id)
-    merchant = session.get(Merchant, receipt.merchant_id) if receipt.merchant_id else None
+    merchant = (
+        session.get(Merchant, receipt.merchant_id) if receipt.merchant_id else None
+    )
     query = ProductQuery(
-        description=item.description,
+        description=description or item.description,
         barcode=barcode,
         merchant_name=merchant.name if merchant else None,
         merchant_address=merchant.address if merchant else receipt.merchant_address,
@@ -72,7 +82,7 @@ def enrich_receipt_item(
         status="running",
         strategy="provider_registry",
         request_data={
-            "description": item.description,
+            "description": query.description,
             "barcode": barcode,
             "merchant_name": query.merchant_name,
         },
@@ -81,13 +91,17 @@ def enrich_receipt_item(
     session.add(run)
     session.flush()
 
-    local_candidates = find_local_candidates(
-        session,
-        household_id=household_id,
-        item=item,
-        receipt=receipt,
-        threshold=settings.product_fuzzy_match_threshold,
-        limit=settings.product_max_local_candidates,
+    local_candidates = (
+        []
+        if refresh_existing
+        else find_local_candidates(
+            session,
+            household_id=household_id,
+            item=item,
+            receipt=receipt,
+            threshold=settings.product_fuzzy_match_threshold,
+            limit=settings.product_max_local_candidates,
+        )
     )
     active_providers = (
         providers if providers is not None else configured_providers(settings)
@@ -247,6 +261,7 @@ def confirm_enrichment_candidate(
     run_id: UUID,
     candidate_index: int,
     user_id: UUID,
+    settings: Settings,
 ) -> ProductMatch:
     run = session.scalar(
         select(ProductEnrichmentRun).where(
@@ -263,8 +278,30 @@ def confirm_enrichment_candidate(
         raise EnrichmentCandidateNotFoundError
 
     candidate = ProductCandidate(**candidate_data)
+    if (
+        candidate.provider == "tavily_web"
+        and candidate.source_url
+        and settings.tavily_api_key
+    ):
+        try:
+            candidate = extract_tavily_candidate(
+                candidate,
+                search_endpoint=settings.tavily_search_endpoint,
+                api_key=settings.tavily_api_key,
+                timeout=settings.product_provider_timeout_seconds,
+                extractor=configured_extractor(settings),
+            )
+        except Exception:
+            pass  # Confirmation must survive an optional extraction failure.
     item, receipt = get_item_context(session, household_id, item_id)
-    product = _materialize(session, household_id, candidate)
+    product = (
+        session.get(Product, item.product_id)
+        if item.product_id
+        else _materialize(session, household_id, candidate)
+    )
+    if product is None or product.household_id != household_id:
+        raise EnrichmentCandidateNotFoundError
+    _merge_candidate(product, candidate)
     match = link_product_match(
         session,
         item=item,
@@ -276,6 +313,13 @@ def confirm_enrichment_candidate(
     )
     if candidate.provider != "local_knowledge":
         _record_evidence(session, household_id, product, candidate)
+        record_candidate_knowledge(
+            session,
+            household_id=household_id,
+            product=product,
+            candidate=candidate,
+            user_id=user_id,
+        )
     run.status = "completed"
     run.result_data = {**run.result_data, "selected_candidate_index": candidate_index}
     run.completed_at = datetime.now(timezone.utc)
@@ -283,9 +327,32 @@ def confirm_enrichment_candidate(
     return match
 
 
+def _merge_candidate(product: Product, candidate: ProductCandidate) -> None:
+    for field_name in (
+        "description",
+        "brand",
+        "manufacturer",
+        "family_name",
+        "category",
+        "barcode",
+    ):
+        if not getattr(product, field_name) and getattr(candidate, field_name):
+            setattr(product, field_name, getattr(candidate, field_name))
+    if product.product_type == "other" and candidate.product_type != "other":
+        product.product_type = candidate.product_type
+    product.metadata_ = {**product.metadata_, **candidate.metadata}
+    product.nutrition = {**product.nutrition, **candidate.nutrition}
+
+
 def _record_evidence(
     session: Session, household_id: UUID, product: Product, candidate: ProductCandidate
 ) -> None:
+    candidate_data = candidate.as_dict()
+    candidate_data["evidence"] = {
+        key: value
+        for key, value in candidate.evidence.items()
+        if key != "source_content"
+    }
     session.add(
         ProductEvidence(
             household_id=household_id,
@@ -294,6 +361,6 @@ def _record_evidence(
             source_url=candidate.source_url,
             external_id=candidate.external_id,
             confidence=Decimal(str(candidate.confidence)),
-            evidence_data=candidate.as_dict(),
+            evidence_data=candidate_data,
         )
     )

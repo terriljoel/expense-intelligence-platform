@@ -44,6 +44,9 @@ class RecurringExpense(Base):
     currency: Mapped[str] = mapped_column(
         String(3), nullable=False, server_default=text("'EUR'")
     )
+    frequency: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'monthly'")
+    )
     day_of_month: Mapped[int] = mapped_column(Integer, nullable=False)
     next_occurrence_date: Mapped[date] = mapped_column(Date, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)

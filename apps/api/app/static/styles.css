@@ -263,3 +263,33 @@ button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: no
 .product-candidate small {
   display: block;
 }
+
+.insight-list { display: grid; gap: 12px; margin-top: 16px; }
+.insight-item { display: grid; grid-template-columns: auto minmax(220px, 1fr) auto; gap: 14px; align-items: start; }
+.insight-select { display: flex; gap: 8px; align-items: center; }
+.insight-copy { display: grid; gap: 5px; }
+.insight-copy p { margin: 5px 0 0; }
+.insight-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.insight-work { grid-column: 2 / -1; }
+.inline-search { display: flex; gap: 8px; margin-bottom: 10px; }
+.inline-search input { flex: 1; min-width: 160px; }
+.status.unmatched { background: #fff0d7; color: #805100; }
+.status.suggested { background: #e7efff; color: #214f98; }
+.status.confirmed { background: #e1f3e8; color: #17613e; }
+.status.rejected { background: #edf0ef; color: #58635e; }
+.nutrition-fields { margin: 12px 0; }
+.knowledge-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 9px; margin: 12px 0; }
+.knowledge-overview span { display: grid; gap: 3px; padding: 10px; border-radius: 8px; background: white; }
+.knowledge-grid { display: grid; grid-template-columns: minmax(160px, 1fr) auto; gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--line); }
+.knowledge-grid > * { padding: 7px 10px; background: white; }
+.knowledge-document { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.knowledge-document small, .knowledge-facts div { display: grid; gap: 3px; }
+.knowledge-facts { display: grid; gap: 8px; margin: 10px 0; }
+.knowledge-facts div { padding: 9px; border-radius: 8px; background: white; }
+.knowledge-source { max-height: 320px; overflow: auto; white-space: pre-wrap; font-size: .75rem; }
+
+@media (max-width: 720px) {
+  .insight-item { grid-template-columns: auto 1fr; }
+  .insight-actions, .insight-work { grid-column: 1 / -1; justify-content: flex-start; }
+  .insight-actions button { flex: 1 1 130px; }
+}

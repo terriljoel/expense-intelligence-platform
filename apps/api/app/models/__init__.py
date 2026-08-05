@@ -3,6 +3,7 @@ from app.models.auth import AuthSession, UserCredential
 from app.models.household import Household, HouseholdMember
 from app.models.income import IncomeEntry
 from app.models.invitation import HouseholdInvitation
+from app.models.knowledge import KnowledgeDocument, KnowledgeFact
 from app.models.merchant import Merchant
 from app.models.payment_method import PaymentMethod
 from app.models.product import (
@@ -24,6 +25,8 @@ __all__ = [
     "IncomeEntry",
     "HouseholdInvitation",
     "Merchant",
+    "KnowledgeDocument",
+    "KnowledgeFact",
     "PaymentMethod",
     "Product",
     "ProductAlias",

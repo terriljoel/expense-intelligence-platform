@@ -70,6 +70,8 @@ class ProductMatchConfirm(BaseModel):
 
 class ProductEnrichmentRequest(BaseModel):
     barcode: str | None = None
+    description: str | None = Field(default=None, min_length=1, max_length=500)
+    refresh_existing: bool = False
 
     _clean_barcode = field_validator("barcode")(ProductCreate.clean_barcode.__func__)
 
@@ -109,3 +111,74 @@ class ProductEnrichmentResponse(BaseModel):
     providers_queried: list[str] = Field(default_factory=list)
     ai_used: bool = False
     retailer_web_search_performed: bool = False
+
+
+class ProductInsightCounts(BaseModel):
+    total: int
+    unmatched: int
+    suggested: int
+    confirmed: int
+    ignored: int
+    products: int
+    food_products: int
+    food_products_with_nutrition: int
+
+
+class ProductInsightItem(BaseModel):
+    id: UUID
+    receipt_id: UUID
+    description: str
+    quantity: Decimal | None
+    line_total: Decimal
+    match_status: ProductMatchStatus
+    match_method: str | None
+    match_score: Decimal | None
+    purchase_date: str
+    merchant_id: UUID | None
+    merchant_name: str | None
+    product: ProductResponse | None
+
+
+class ProductInsightsResponse(BaseModel):
+    counts: ProductInsightCounts
+    items: list[ProductInsightItem]
+
+
+class ProductInsightStatusUpdate(BaseModel):
+    status: Literal["unmatched", "rejected"]
+
+
+class ProductInsightBulkMatch(BaseModel):
+    item_ids: list[UUID] = Field(min_length=1, max_length=100)
+
+
+class ProductInsightBulkResult(BaseModel):
+    processed: int
+    matched: int
+
+
+class KnowledgeFactResponse(BaseModel):
+    fact_type: str
+    value: dict[str, Any]
+    extraction_method: str
+    confidence: Decimal
+    confirmation_status: str
+    created_at: datetime
+
+
+class KnowledgeDocumentResponse(BaseModel):
+    id: UUID
+    provider: str
+    source_url: str | None
+    title: str
+    content_text: str | None
+    content_type: str
+    content_sha256: str
+    retrieved_at: datetime
+    metadata: dict[str, Any]
+    facts: list[KnowledgeFactResponse]
+
+
+class ProductKnowledgeResponse(BaseModel):
+    product: ProductResponse
+    documents: list[KnowledgeDocumentResponse]

@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date
+from datetime import date, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -36,6 +36,7 @@ def save_template(
         raise LookupError
     for key, value in data.model_dump().items():
         setattr(template, key, value)
+    template.day_of_month = data.day_of_month or data.next_occurrence_date.day
     session.add(template)
     session.flush()
     return template
@@ -55,7 +56,7 @@ def generate_due(
         .with_for_update()
     ).all()
     for template in templates:
-        for _ in range(24):
+        for _ in range(366):
             due = template.next_occurrence_date
             if due > today:
                 break
@@ -97,13 +98,25 @@ def generate_due(
                     line_total=template.amount,
                 )
                 created.append(receipt)
-            template.next_occurrence_date = _next_month(due, template.day_of_month)
+            template.next_occurrence_date = next_occurrence(
+                due, template.frequency, template.day_of_month
+            )
     session.flush()
     return created
 
 
-def _next_month(value: date, day: int) -> date:
-    year, month = (
-        (value.year + 1, 1) if value.month == 12 else (value.year, value.month + 1)
+def next_occurrence(value: date, frequency: str, day: int) -> date:
+    if frequency == "daily":
+        return value + timedelta(days=1)
+    if frequency == "weekly":
+        return value + timedelta(days=7)
+    return _add_months(
+        value, {"monthly": 1, "quarterly": 3, "yearly": 12}[frequency], day
     )
+
+
+def _add_months(value: date, months: int, day: int) -> date:
+    month_index = value.year * 12 + value.month - 1 + months
+    year, month_index = divmod(month_index, 12)
+    month = month_index + 1
     return date(year, month, min(day, monthrange(year, month)[1]))

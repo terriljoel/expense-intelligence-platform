@@ -1,5 +1,9 @@
 from app.core.config import Settings
 from app.product_intelligence.contracts import ProductProvider
+from app.product_intelligence.extractors import (
+    GitHubModelsProductExtractor,
+    ProductTextExtractor,
+)
 from app.product_intelligence.providers.open_food_facts import OpenFoodFactsProvider
 from app.product_intelligence.providers.search_a_licious import SearchALiciousProvider
 from app.product_intelligence.providers.tavily import TavilyResearchProvider
@@ -53,6 +57,17 @@ def configured_ranker(settings: Settings) -> CandidateRanker | None:
     ):
         return None
     return GitHubModelsRanker(
+        endpoint=settings.github_models_endpoint,
+        model=settings.github_models_model,
+        token=settings.github_models_token,
+        timeout=settings.product_agent_timeout_seconds,
+    )
+
+
+def configured_extractor(settings: Settings) -> ProductTextExtractor | None:
+    if not settings.product_llm_extraction_enabled or not settings.github_models_token:
+        return None
+    return GitHubModelsProductExtractor(
         endpoint=settings.github_models_endpoint,
         model=settings.github_models_model,
         token=settings.github_models_token,

@@ -146,7 +146,6 @@ function resetCaptureUi() {
   $("#open-duplicate-receipt").hidden = true;
   $("#use-capture").disabled = false;
   $("#receipt-create-form").elements.capture_id.value = "";
-  $("#auto-recognize-products-option").hidden = true;
 }
 
 function renderCaptureReview() {
@@ -179,7 +178,6 @@ function renderCaptureReview() {
 }
 
 async function useCaptureSuggestions() {
-  $("#auto-recognize-products-option").hidden = false;
   const capture = state.capture;
   if (!capture) return;
   const form = $("#receipt-create-form");
@@ -284,6 +282,7 @@ function switchView(name) {
   if (name === "income") renderIncome();
   if (name === "members") loadMembers().catch((error) => notify(error.message, true));
   if (name === "dashboard") loadDashboard().catch((error) => notify(error.message, true));
+  if (name === "products") window.productIntelligence.load().catch((error) => notify(error.message, true));
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -383,7 +382,7 @@ async function loadReceipts() {
 }
 
 function renderRecurring() {
-  $("#recurring-list").innerHTML = state.recurring.map((entry) => `<div class="setting-item"><div class="line-copy"><strong>${escapeHtml(entry.name)}</strong><small>${money(entry.amount, entry.currency)} · ${titleCase(entry.category)} · next ${formatDate(entry.next_occurrence_date)} · ${entry.is_active ? "active" : "paused"}</small></div><div class="member-actions"><button class="icon-button" data-edit-recurring="${entry.id}">Edit</button><button class="icon-button delete" data-delete-recurring="${entry.id}">Delete</button></div></div>`).join("") || `<p class="muted">No recurring expenses.</p>`;
+  $("#recurring-list").innerHTML = state.recurring.map((entry) => `<div class="setting-item"><div class="line-copy"><strong>${escapeHtml(entry.name)}</strong><small>${money(entry.amount, entry.currency)} · ${titleCase(entry.category)} · ${titleCase(entry.frequency)} · next ${formatDate(entry.next_occurrence_date)} · ${entry.is_active ? "active" : "paused"}</small></div><div class="member-actions"><button class="icon-button" data-edit-recurring="${entry.id}">Edit</button><button class="icon-button delete" data-delete-recurring="${entry.id}">Delete</button></div></div>`).join("") || `<p class="muted">No recurring expenses.</p>`;
 }
 
 function resetRecurringForm() {
@@ -744,7 +743,6 @@ function bindEvents() {
     form.elements.purchase_date.value = today();
     form.elements.currency.value = activeCurrency();
     $("#capture-merchant-hint").hidden = true;
-    $("#auto-recognize-products-option").hidden = true;
   });
   $("[data-cancel-create]").addEventListener("click", () => {
     $("#receipt-create-form").hidden = true;
@@ -807,14 +805,13 @@ function bindEvents() {
 
   $("#receipt-create-form").addEventListener("submit", async (event) => {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
-    const recognizeProducts = data.get("auto_recognize_products") === "on";
     const receipt = await run(() => api("/receipts", { method: "POST", body: JSON.stringify({ capture_id: data.get("capture_id") || null, merchant_id: data.get("merchant_id") || null, payment_method_id: data.get("payment_method_id") || null, category: data.get("category"), receipt_number: data.get("receipt_number") || null, purchase_date: data.get("purchase_date"), stated_total: data.get("stated_total"), currency: String(data.get("currency")).toUpperCase(), notes: data.get("notes") || null }) }), "Receipt created").catch(() => null);
-    if (receipt) { form.reset(); form.hidden = true; resetCaptureUi(); await loadReceipts(); await openReceipt(receipt.id); if (recognizeProducts) await window.productIntelligence.recognizeAll(window.expenseApp); }
+    if (receipt) { form.reset(); form.hidden = true; resetCaptureUi(); await loadReceipts(); await openReceipt(receipt.id); }
   });
 
   $("#recurring-form").addEventListener("submit", async (event) => {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const id = data.get("edit_id");
-    const payload = { name: data.get("name"), merchant_id: data.get("merchant_id") || null, payment_method_id: data.get("payment_method_id") || null, category: data.get("category"), amount: data.get("amount"), currency: String(data.get("currency")).toUpperCase(), day_of_month: Number(data.get("day_of_month")), next_occurrence_date: data.get("next_occurrence_date"), notes: data.get("notes") || null, is_active: data.get("is_active") === "on" };
+    const payload = { name: data.get("name"), merchant_id: data.get("merchant_id") || null, payment_method_id: data.get("payment_method_id") || null, category: data.get("category"), amount: data.get("amount"), currency: String(data.get("currency")).toUpperCase(), frequency: data.get("frequency"), day_of_month: data.get("day_of_month") ? Number(data.get("day_of_month")) : null, next_occurrence_date: data.get("next_occurrence_date"), notes: data.get("notes") || null, is_active: data.get("is_active") === "on" };
     const saved = await run(() => api(id ? `/recurring-expenses/${id}` : "/recurring-expenses", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }), "Recurring expense saved").catch(() => null);
     if (saved) { resetRecurringForm(); await loadReceipts(); }
   });

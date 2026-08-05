@@ -19,6 +19,7 @@ Category = Literal[
     "travel",
     "other",
 ]
+Frequency = Literal["daily", "weekly", "monthly", "quarterly", "yearly"]
 
 
 class RecurringExpenseWrite(BaseModel):
@@ -28,7 +29,8 @@ class RecurringExpenseWrite(BaseModel):
     category: Category = "other"
     amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     currency: str = Field(default="EUR", pattern=r"^[A-Z]{3}$")
-    day_of_month: int = Field(ge=1, le=31)
+    frequency: Frequency = "monthly"
+    day_of_month: int | None = Field(default=None, ge=1, le=31)
     next_occurrence_date: date
     notes: str | None = Field(default=None, max_length=1000)
     is_active: bool = True

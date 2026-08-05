@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from difflib import SequenceMatcher
 
 
 _UNIT_PATTERN = re.compile(r"(?<=\d)\s*(kg|g|mg|l|ml|cl)\b", re.IGNORECASE)
@@ -20,3 +21,16 @@ def normalize_barcode(value: str | None) -> str | None:
 
 normalize_product_name = normalize_text
 normalize_receipt_item = normalize_text
+
+
+def product_search_terms(value: str) -> list[str]:
+    return [normalize_text(value)]
+
+
+def product_search_similarity(query: str, candidate: str) -> float:
+    transliteration = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+    candidate_key = normalize_text(candidate).translate(transliteration)
+    return max(
+        SequenceMatcher(None, term.translate(transliteration), candidate_key).ratio()
+        for term in product_search_terms(query)
+    )

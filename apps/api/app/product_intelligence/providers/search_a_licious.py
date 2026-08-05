@@ -1,9 +1,8 @@
-from difflib import SequenceMatcher
 from urllib.parse import urlencode
 
 from app.product_intelligence.contracts import ProductCandidate, ProductQuery
 from app.product_intelligence.http import JsonTransport, get_json
-from app.services.text_normalization import normalize_product_name
+from app.services.text_normalization import product_search_similarity
 
 
 FIELDS = (
@@ -71,11 +70,9 @@ class SearchALiciousProvider:
         name = _text(product, "product_name_de", "product_name")
         if not name:
             return None
-        similarity = SequenceMatcher(
-            None,
-            normalize_product_name(query.description),
-            normalize_product_name(name),
-        ).ratio()
+        similarity = product_search_similarity(query.description, name)
+        if similarity < 0.55:
+            return None
         confidence = round(min(0.89, 0.55 + 0.34 * similarity), 3)
         code = _text(product, "code")
         return ProductCandidate(

@@ -6,9 +6,9 @@
     <meta name="theme-color" content="#18392b" />
     <title>Expense Intelligence</title>
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260804-compact-search" />
-    <script src="/static/app.js?v=20260804-analytics-search" defer></script>
-    <script src="/static/js/product-intelligence.js?v=20260802-1" defer></script>
+    <link rel="stylesheet" href="/static/styles.css?v=20260805-product-insights" />
+    <script src="/static/app.js?v=20260805-recurring-frequency" defer></script>
+    <script src="/static/js/product-intelligence.js?v=20260805-product-knowledge" defer></script>
   </head>
   <body>
     <section id="login-view" class="login-screen">
@@ -63,6 +63,7 @@
       <nav aria-label="Main navigation">
         <button class="nav-button active" data-view="dashboard">Dashboard</button>
         <button class="nav-button" data-view="receipts">Receipts</button>
+        <button class="nav-button" data-view="products">Product Insights</button>
         <button class="nav-button" data-view="income">Income</button>
         <button class="nav-button" data-view="members">Members</button>
         <button class="nav-button" data-view="settings">Setup</button>
@@ -171,13 +172,12 @@
               <label>Total<input name="stated_total" type="number" min="0" step="0.01" inputmode="decimal" required /></label>
               <label>Currency<input name="currency" value="EUR" maxlength="3" pattern="[A-Z]{3}" required /></label>
               <label class="wide">Notes<textarea name="notes" rows="2" placeholder="Optional"></textarea></label>
-              <label id="auto-recognize-products-option" class="wide checkbox-row" hidden><input name="auto_recognize_products" type="checkbox" /> Recognize all OCR product items automatically after creating the draft</label>
             </div>
             <button class="primary" type="submit">Create and open</button>
           </form>
 
           <details class="card" id="recurring-card">
-            <summary><strong>Recurring expenses</strong> <span class="muted">Monthly drafts for rent, bills and subscriptions</span></summary>
+            <summary><strong>Recurring expenses</strong> <span class="muted">Scheduled drafts for rent, bills and subscriptions</span></summary>
             <form id="recurring-form" class="compact-form">
               <input name="edit_id" type="hidden" />
               <div class="form-grid">
@@ -187,7 +187,8 @@
                 <label>Payment method<select name="payment_method_id" data-payment-select></select></label>
                 <label>Amount<input name="amount" type="number" min="0" step="0.01" required /></label>
                 <label>Currency<input name="currency" value="EUR" maxlength="3" required /></label>
-                <label>Day each month<input name="day_of_month" type="number" min="1" max="31" value="1" required /></label>
+                <label>Frequency<select name="frequency"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly" selected>Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option></select></label>
+                <label>Preferred day of month<input name="day_of_month" type="number" min="1" max="31" placeholder="Uses first draft date" /></label>
                 <label>First/next draft<input name="next_occurrence_date" type="date" required /></label>
                 <label class="wide">Notes<textarea name="notes" rows="2"></textarea></label>
                 <label class="checkbox-row"><input name="is_active" type="checkbox" checked /> Active</label>
@@ -262,6 +263,47 @@
             <div id="audit-list" class="timeline"></div>
           </section>
         </article>
+      </section>
+
+      <section id="products-view" class="view" hidden>
+        <div class="page-heading">
+          <div><p class="eyebrow">Household knowledge</p><h1>Product Insights</h1><p class="muted">Approve receipts first, then classify products here when convenient.</p></div>
+          <button id="match-known-products" class="secondary" type="button">Match selected from known products</button>
+        </div>
+        <div id="product-insight-counts" class="summary-grid"></div>
+        <form id="product-insight-filters" class="card search-card">
+          <label>Search<input name="query" type="search" maxlength="200" placeholder="Receipt text, product, brand or barcode" /></label>
+          <label>Status<select name="match_status"><option value="">All</option><option value="unmatched">Unmatched</option><option value="suggested">Suggested</option><option value="confirmed">Matched</option><option value="rejected">Ignored</option></select></label>
+          <label>Merchant<select name="merchant_id"><option value="">All merchants</option></select></label>
+          <button class="secondary" type="submit">Search</button>
+        </form>
+        <div id="product-insight-list" class="insight-list" aria-live="polite"></div>
+
+        <section id="manual-product-card" class="card form-card" hidden>
+          <div class="section-heading"><div><p class="eyebrow">Manual classification</p><h2>Create and match product</h2></div><button type="button" class="text-button" data-close-product-editor>Close</button></div>
+          <p id="manual-product-source" class="dashboard-note"></p>
+          <form id="manual-product-form">
+            <input name="item_id" type="hidden" />
+            <div class="form-grid">
+              <label>Meaningful name<input name="canonical_name" maxlength="500" required /></label>
+              <label>Family<input name="family_name" maxlength="200" placeholder="Milk, Pizza, Shampoo" /></label>
+              <label>Type<select name="product_type"><option value="food">Food</option><option value="household">Household</option><option value="personal_care">Personal care</option><option value="other">Other</option></select></label>
+              <label>Category<input name="category" maxlength="100" placeholder="Dairy, frozen food" /></label>
+              <label>Brand<input name="brand" maxlength="300" /></label>
+              <label>Manufacturer<input name="manufacturer" maxlength="300" /></label>
+              <label>Barcode (optional)<input name="barcode" inputmode="numeric" pattern="[0-9]{8,14}" /></label>
+              <label class="wide">Description<textarea name="description" rows="2" maxlength="2000"></textarea></label>
+            </div>
+            <details><summary>Nutrition per 100 g/ml (optional)</summary><div class="form-grid nutrition-fields">
+              <label>Energy kcal<input name="energy_kcal" type="number" min="0" step="0.1" /></label>
+              <label>Fat g<input name="fat_g" type="number" min="0" step="0.1" /></label>
+              <label>Carbohydrate g<input name="carbohydrate_g" type="number" min="0" step="0.1" /></label>
+              <label>Protein g<input name="protein_g" type="number" min="0" step="0.1" /></label>
+              <label>Salt g<input name="salt_g" type="number" min="0" step="0.01" /></label>
+            </div></details>
+            <button class="primary" type="submit">Create and match</button>
+          </form>
+        </section>
       </section>
 
       <section id="income-view" class="view" hidden>

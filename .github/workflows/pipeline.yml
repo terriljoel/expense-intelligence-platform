@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ["v*.*.*"]
   workflow_dispatch:
 
 permissions:
@@ -62,7 +63,9 @@ jobs:
         run: docker build --file apps/api/Dockerfile --tag expense-intelligence:test .
 
   deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     needs: test
     runs-on: ubuntu-latest
     environment: production
@@ -71,7 +74,7 @@ jobs:
       id-token: write
     env:
       DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-      IMAGE: ${{ vars.ACR_LOGIN_SERVER }}/${{ vars.ACR_REPOSITORY }}:${{ github.sha }}
+      IMAGE_REPOSITORY: ${{ vars.ACR_LOGIN_SERVER }}/${{ vars.ACR_REPOSITORY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -85,13 +88,34 @@ jobs:
       - name: Sign in to Azure Container Registry
         run: az acr login --name "${{ vars.ACR_NAME }}"
 
+      - name: Select immutable image version
+        id: image
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+              echo "Invalid release tag: $GITHUB_REF_NAME (expected v1.2.3)" >&2
+              exit 1
+            }
+            version="$GITHUB_REF_NAME"
+          else
+            version="sha-${GITHUB_SHA::12}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "name=${IMAGE_REPOSITORY}:$version" >> "$GITHUB_OUTPUT"
+          echo "Deploying ${IMAGE_REPOSITORY}:$version"
+
       - name: Build and push application image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/api/Dockerfile
           push: true
-          tags: ${{ env.IMAGE }}
+          tags: ${{ steps.image.outputs.name }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.image.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
       - uses: actions/setup-python@v5
         with:
@@ -111,4 +135,4 @@ jobs:
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
-          images: ${{ env.IMAGE }}
+          images: ${{ steps.image.outputs.name }}

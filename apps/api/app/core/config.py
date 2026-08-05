@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     github_models_model: str = "openai/gpt-4.1-mini"
     github_models_token: str | None = Field(default=None, repr=False)
     product_agent_timeout_seconds: int = Field(default=30, ge=1, le=120)
+    product_llm_extraction_enabled: bool = False
     product_web_search_enabled: bool = False
     tavily_api_key: str | None = Field(default=None, repr=False)
     tavily_search_endpoint: str = "https://api.tavily.com/search"
