@@ -47,6 +47,23 @@ class FakeOcrProvider:
         )
 
 
+class NegativeLineOcrProvider:
+    def extract_text(self, image: bytes) -> OcrResult:
+        assert image == PNG_IMAGE
+        return OcrResult(
+            provider="test-ocr",
+            raw_text="REWE\nDatum 23.07.2026\nSUMME EUR 7,91\n",
+            line_items=(
+                OcrLineItem(
+                    description="Kirschen lose",
+                    quantity=None,
+                    unit_price=None,
+                    line_total=Decimal("-2.09"),
+                ),
+            ),
+        )
+
+
 class FailingOcrProvider:
     def extract_text(self, image: bytes) -> OcrResult:
         raise OcrProcessingError("Provider unavailable")
@@ -197,6 +214,29 @@ def test_capture_ocr_review_and_create_image_receipt(
     assert (
         capture_client.delete(f"/receipt-captures/{uploaded['id']}").status_code == 409
     )
+
+
+def test_negative_ocr_line_is_created_as_discount(
+    capture_client: TestClient,
+) -> None:
+    app.dependency_overrides[get_ocr_provider] = lambda: NegativeLineOcrProvider()
+    uploaded = upload_capture(capture_client)
+    ocr = capture_client.post(f"/receipt-captures/{uploaded['id']}/ocr").json()
+
+    receipt = capture_client.post(
+        "/receipts",
+        json={
+            "capture_id": uploaded["id"],
+            "purchase_date": ocr["suggested_purchase_date"],
+            "currency": ocr["suggested_currency"],
+            "stated_total": ocr["suggested_total"],
+        },
+    )
+
+    assert receipt.status_code == 201
+    items = capture_client.get(f"/receipts/{receipt.json()['id']}/items").json()
+    assert items[0]["line_type"] == "discount"
+    assert items[0]["line_total"] == "-2.09"
 
 
 def test_duplicate_and_invalid_images_are_rejected(

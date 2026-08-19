@@ -204,6 +204,11 @@ def post_receipt(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Active payment method not found for this user",
         ) from exc
+    except ReceiptItemAmountError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="OCR produced a line item with an invalid amount sign",
+        ) from exc
     except ReceiptCaptureNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -353,6 +358,11 @@ def post_receipt_item(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Receipt item position already exists",
+        ) from exc
+    except ReceiptItemAmountError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Line type and line total have an invalid sign",
         ) from exc
 
     return ReceiptItemResponse.model_validate(item)

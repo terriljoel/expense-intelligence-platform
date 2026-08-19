@@ -99,7 +99,7 @@ def test_payment_reconciliation_and_approval(
     assert approval_response.json()["status"] == "approved"
     assert approval_response.json()["approved_at"] is not None
 
-    listed_receipts = client.get("/receipts?limit=10&offset=0")
+    listed_receipts = client.get("/receipts?limit=100&offset=0")
     assert listed_receipts.status_code == 200
     assert receipt_id in {
         receipt["id"] for receipt in listed_receipts.json()

@@ -477,6 +477,7 @@ def process_capture_ocr(
                 str(item.unit_price) if item.unit_price is not None else None
             ),
             "line_total": str(item.line_total),
+            "line_type": "discount" if item.line_total < 0 else "product",
         }
         for item in result.line_items
     ]

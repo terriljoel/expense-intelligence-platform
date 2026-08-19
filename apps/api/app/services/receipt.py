@@ -110,6 +110,13 @@ def _field_changes(
     }
 
 
+def _validate_item_amount(line_type: str, line_total: Decimal) -> None:
+    if line_type == "discount" and line_total > 0:
+        raise ReceiptItemAmountError
+    if line_type in {"product", "deposit", "fee", "tax"} and line_total < 0:
+        raise ReceiptItemAmountError
+
+
 def record_audit_event(
     session: Session,
     *,
@@ -273,13 +280,17 @@ def create_receipt(
 
     if capture is not None:
         for position, item in enumerate(capture.suggested_items or [], start=1):
+            line_total = Decimal(str(item["line_total"]))
             add_receipt_item(
                 session,
                 household_id=household_id,
                 receipt_id=receipt.id,
                 actor_user_id=created_by_user_id,
                 position=position,
-                line_type="product",
+                line_type=str(
+                    item.get("line_type")
+                    or ("discount" if line_total < 0 else "product")
+                ),
                 raw_description=str(item["description"]),
                 description=str(item["description"]),
                 raw_quantity_text=(
@@ -295,7 +306,7 @@ def create_receipt(
                     if item.get("unit_price") is not None
                     else None
                 ),
-                line_total=Decimal(str(item["line_total"])),
+                line_total=line_total,
             )
 
     selected_method = (
@@ -431,6 +442,7 @@ def add_receipt_item(
     unit_price: Decimal | None,
     line_total: Decimal,
 ) -> ReceiptItem:
+    _validate_item_amount(line_type, line_total)
     _get_editable_receipt(
         session, household_id=household_id, receipt_id=receipt_id
     )
@@ -555,10 +567,7 @@ def update_receipt_item(
     new_line_total = changes.get("line_total", item.line_total)
     if not isinstance(new_line_total, Decimal):
         new_line_total = Decimal(str(new_line_total))
-    if new_line_type == "discount" and new_line_total > 0:
-        raise ReceiptItemAmountError
-    if new_line_type in {"product", "deposit", "fee", "tax"} and new_line_total < 0:
-        raise ReceiptItemAmountError
+    _validate_item_amount(new_line_type, new_line_total)
 
     changed_fields = _field_changes(item, changes)
     if "description" in changed_fields:
