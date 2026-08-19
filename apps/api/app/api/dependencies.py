@@ -8,6 +8,11 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
 from app.services.auth import SESSION_COOKIE_NAME, resolve_auth_session
+from app.core.config import Settings, get_settings
+from app.services.receipt_image_storage import (
+    ReceiptImageStorage,
+    build_receipt_image_storage,
+)
 
 
 @dataclass(frozen=True)
@@ -16,6 +21,12 @@ class CurrentPrincipal:
     household_id: UUID
     role: str
     is_global_admin: bool = False
+
+
+def get_receipt_image_storage(
+    settings: Settings = Depends(get_settings),
+) -> ReceiptImageStorage:
+    return build_receipt_image_storage(settings)
 
 
 def reject_cross_site_request(request: Request) -> None:
@@ -53,9 +64,7 @@ def get_current_principal(
 
     reject_cross_site_request(request)
     token = request.cookies.get(SESSION_COOKIE_NAME)
-    authenticated = (
-        resolve_auth_session(session, token=token) if token else None
-    )
+    authenticated = resolve_auth_session(session, token=token) if token else None
     if authenticated is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

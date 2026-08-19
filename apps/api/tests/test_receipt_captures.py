@@ -178,7 +178,14 @@ def test_capture_ocr_review_and_create_image_receipt(
     )
     assert receipt.status_code == 201
     assert receipt.json()["source"] == "image"
+    assert receipt.json()["image_url"] == f"/receipts/{receipt.json()['id']}/image"
     assert receipt.json()["merchant_id"] is not None
+
+    receipt_image = capture_client.get(receipt.json()["image_url"])
+    download = capture_client.get(f"{receipt.json()['image_url']}?download=true")
+    assert receipt_image.content == PNG_IMAGE
+    assert receipt_image.headers["content-disposition"].startswith("inline;")
+    assert download.headers["content-disposition"].startswith("attachment;")
 
     items = capture_client.get(f"/receipts/{receipt.json()['id']}/items").json()
     assert len(items) == 1
@@ -207,6 +214,29 @@ def test_duplicate_and_invalid_images_are_rejected(
 
     assert duplicate.status_code == 409
     assert invalid.status_code == 422
+
+
+def test_upload_policy_and_oversized_image_return_clear_413(
+    capture_client: TestClient,
+) -> None:
+    current = app.dependency_overrides[get_settings]()
+    limited = current.model_copy(update={"receipt_image_max_bytes": 1024})
+    app.dependency_overrides[get_settings] = lambda: limited
+
+    policy = capture_client.get("/receipt-captures/upload-policy")
+    oversized = capture_client.post(
+        "/receipt-captures",
+        files={"file": ("large.png", PNG_IMAGE + b"x" * 1024, "image/png")},
+    )
+
+    assert policy.status_code == 200
+    assert policy.json()["max_bytes"] == 1024
+    assert "image/png" in policy.json()["allowed_media_types"]
+    assert oversized.status_code == 413
+    assert oversized.json()["detail"] == (
+        "Receipt image exceeds the 1 KB upload limit. "
+        "Choose a smaller image or reduce its resolution."
+    )
 
 
 def test_ocr_failure_is_retained_and_manual_fallback_remains_available(

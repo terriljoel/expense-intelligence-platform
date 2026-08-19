@@ -19,9 +19,13 @@ const state = {
   households: [],
   currentHousehold: null,
   capture: null,
+  uploadPolicy: null,
   maintenance: null,
   dashboard: null,
 };
+
+const canAdministerHousehold = () =>
+  state.user?.role === "owner" || Boolean(state.user?.is_global_admin);
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -42,10 +46,13 @@ async function api(path, options = {}) {
     headers: { ...(options.body && !isFormData ? { "Content-Type": "application/json" } : {}), ...options.headers },
   });
   if (!response.ok) {
-    let message = `Request failed (${response.status})`;
+    let message = response.status === 413
+      ? "The selected image is too large. Choose a smaller image or reduce its resolution."
+      : `Request failed (${response.status})`;
     try {
       const body = await response.json();
       if (typeof body.detail === "string") message = body.detail;
+      if (body.error_id) message = `${message} (error ID: ${body.error_id})`;
       if (body.detail && typeof body.detail === "object" && body.detail.message) message = `${body.detail.message}${body.detail.reason ? `: ${body.detail.reason}` : ""}`;
       if (Array.isArray(body.detail)) message = body.detail.map((item) => item.msg).join(", ");
     } catch (_) { /* Use the fallback message. */ }
@@ -57,6 +64,25 @@ async function api(path, options = {}) {
     throw error;
   }
   return response.status === 204 ? null : response.json();
+}
+
+function readableBytes(bytes) {
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace(".0", "")} MB`;
+}
+
+function captureFileError(file) {
+  if (!file) return "Choose or take a receipt image first.";
+  const policy = state.uploadPolicy;
+  if (policy?.allowed_media_types && !policy.allowed_media_types.includes(file.type)) return "Unsupported file type. Choose a JPEG, PNG or WebP image.";
+  if (policy?.max_bytes && file.size > policy.max_bytes) return `“${file.name}” is ${readableBytes(file.size)}. The maximum upload size is ${readableBytes(policy.max_bytes)}.`;
+  return "";
+}
+
+function showCaptureUploadError(message = "") {
+  const error = $("#capture-upload-error");
+  error.textContent = message;
+  error.hidden = !message;
 }
 
 let noticeTimer;
@@ -287,7 +313,7 @@ function switchView(name) {
 }
 
 async function loadMaintenance() {
-  const canAdminister = state.user?.role === "owner" || state.user?.is_global_admin;
+  const canAdminister = canAdministerHousehold();
   const card = $("#maintenance-card");
   card.hidden = !canAdminister;
   if (!canAdminister) return;
@@ -309,15 +335,15 @@ async function loadMembers() {
     api("/household"),
     api("/household/members"),
   ]);
-  const canAdminister = state.user?.role === "owner" || state.user?.is_global_admin;
+  const canAdminister = canAdministerHousehold();
   $("#invitation-admin-card").hidden = !canAdminister;
   state.invitations = canAdminister ? await api("/household/invitations") : [];
   renderMembers();
 }
 
 function renderMembers() {
-  const canAdminister = state.user?.role === "owner" || state.user?.is_global_admin;
-  const isOwner = state.user?.role === "owner" || state.user?.is_global_admin;
+  const canAdminister = canAdministerHousehold();
+  const isOwner = canAdministerHousehold();
   $("#member-count").textContent = `${state.members.length} member${state.members.length === 1 ? "" : "s"}`;
   $("#member-list").innerHTML = state.members.map((member) => {
     const isSelf = member.user_id === state.user.user_id;
@@ -341,6 +367,18 @@ async function loadSetup() {
   ]);
   renderSelects();
   renderSettings();
+  $("#diagnostics-card").hidden = !state.user?.is_global_admin;
+  if (state.user?.is_global_admin) await loadDiagnostics();
+}
+
+async function loadDiagnostics() {
+  const data = await api("/diagnostics/errors");
+  $("#diagnostics-list").innerHTML = data.entries.map((entry) => `
+    <details class="diagnostic-entry ${entry.level}">
+      <summary><strong>${escapeHtml(entry.level.toUpperCase())} ${entry.status_code}</strong> <code>${escapeHtml(entry.id)}</code> · ${escapeHtml(entry.method || "APP")} ${escapeHtml(entry.path || "")} <small>${escapeHtml(formatTime(entry.timestamp))}</small></summary>
+      <p>${escapeHtml(entry.message)}</p>
+      ${entry.traceback ? `<pre>${escapeHtml(entry.traceback)}</pre>` : ""}
+    </details>`).join("") || `<p class="muted">No warnings or errors have been recorded since this app instance started.</p>`;
 }
 
 function renderSelects() {
@@ -559,7 +597,15 @@ function renderReceiptDetail() {
   $("#item-form").hidden = !editable;
   $("#payment-form").hidden = !editable;
   $("#approve-receipt").hidden = !editable;
+  $("#reopen-receipt").hidden = receipt.status !== "approved";
   $("#void-receipt").hidden = receipt.status === "voided";
+  const imageCard = $("#receipt-image-card");
+  const storedImage = $("#receipt-stored-image");
+  imageCard.hidden = !receipt.image_url;
+  storedImage.hidden = true;
+  storedImage.removeAttribute("src");
+  $("#view-receipt-image").textContent = "View image";
+  $("#download-receipt-image").href = receipt.image_url ? `${receipt.image_url}?download=true` : "#";
   renderReconciliation();
   renderItems();
   renderPayments();
@@ -755,6 +801,15 @@ function bindEvents() {
   const receiptImageInputs = [...document.querySelectorAll("[data-receipt-image]")];
   receiptImageInputs.forEach((input) => input.addEventListener("change", (event) => {
     const file = event.currentTarget.files?.[0] || null;
+    const error = captureFileError(file);
+    showCaptureUploadError(error);
+    if (error) {
+      selectedReceiptImage = null;
+      event.currentTarget.value = "";
+      const preview = $("#capture-preview");
+      preview.hidden = true; preview.removeAttribute("src");
+      return;
+    }
     selectedReceiptImage = file;
     receiptImageInputs.filter((item) => item !== event.currentTarget).forEach((item) => { item.value = ""; });
     const preview = $("#capture-preview");
@@ -765,7 +820,9 @@ function bindEvents() {
   $("#receipt-capture-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
-    if (!selectedReceiptImage) { notify("Choose or take a receipt image first", "error"); return; }
+    const validationError = captureFileError(selectedReceiptImage);
+    if (validationError) { showCaptureUploadError(validationError); notify(validationError, true); return; }
+    showCaptureUploadError();
     const button = form.querySelector("button[type=submit]");
     button.disabled = true; button.textContent = "Reading receipt…";
     try {
@@ -774,7 +831,7 @@ function bindEvents() {
       const uploaded = await run(() => api("/receipt-captures", { method: "POST", body }), null);
       state.capture = await run(() => api(`/receipt-captures/${uploaded.id}/ocr`, { method: "POST" }), uploaded.ocr_status === "pending" ? "Receipt image uploaded" : null);
       renderCaptureReview();
-    } catch (_) { /* run() already displayed the error. */ }
+    } catch (error) { showCaptureUploadError(error.message || "The image could not be uploaded."); }
     finally { button.disabled = false; button.textContent = "Upload and read text"; }
   });
   $("#retry-ocr").addEventListener("click", async () => {
@@ -858,12 +915,30 @@ function bindEvents() {
     if (remove && confirm("Delete this payment?")) { const result = await run(() => api(`/receipts/${state.receipt.id}/payments/${remove.dataset.deletePayment}`, { method: "DELETE" }), "Payment deleted").catch(() => false); if (result !== false) await refreshReceipt(); }
   });
 
-  $("#approve-receipt").addEventListener("click", async () => { if (confirm("Approve this receipt? It can no longer be edited.")) { const result = await run(() => api(`/receipts/${state.receipt.id}/approve`, { method: "POST" }), "Receipt approved").catch(() => null); if (result) { closeReceipt(); switchView("receipts"); } } });
+  $("#approve-receipt").addEventListener("click", async () => { if (confirm("Approve this receipt? You can reopen it later if a correction is needed.")) { const result = await run(() => api(`/receipts/${state.receipt.id}/approve`, { method: "POST" }), "Receipt approved").catch(() => null); if (result) { closeReceipt(); switchView("receipts"); } } });
+  $("#reopen-receipt").addEventListener("click", async () => {
+    if (!confirm("Reopen this approved receipt for editing? It will temporarily leave approved dashboard totals.")) return;
+    const result = await run(() => api(`/receipts/${state.receipt.id}/reopen`, { method: "POST" }), "Receipt reopened").catch(() => null);
+    if (result) await refreshReceipt();
+  });
+  $("#view-receipt-image").addEventListener("click", () => {
+    const image = $("#receipt-stored-image");
+    const showing = !image.hidden;
+    if (!showing && !image.getAttribute("src")) image.src = state.receipt.image_url;
+    image.hidden = showing;
+    $("#view-receipt-image").textContent = showing ? "View image" : "Hide image";
+  });
   $("#void-receipt").addEventListener("click", async () => { const reason = prompt("Why is this receipt being voided? (optional)"); if (reason !== null) { const result = await run(() => api(`/receipts/${state.receipt.id}/void`, { method: "POST", body: JSON.stringify({ reason: reason || null }) }), "Receipt voided").catch(() => null); if (result) await refreshReceipt(); } });
 
   $("#merchant-form").addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const result = await run(() => api("/merchants", { method: "POST", body: JSON.stringify({ name: data.get("name"), address: data.get("address") || null }) }), "Merchant added").catch(() => null); if (result) { form.reset(); await loadSetup(); await loadReceipts(); } });
   $("#method-form").addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const result = await run(() => api("/payment-methods", { method: "POST", body: JSON.stringify({ name: data.get("name"), method_type: data.get("method_type"), provider: data.get("provider") || null, last_four: data.get("last_four") || null }) }), "Payment method added").catch(() => null); if (result) { form.reset(); await loadSetup(); } });
   $("#refresh-maintenance-button").addEventListener("click", () => loadMaintenance().catch((error) => notify(error.message, true)));
+  $("#refresh-diagnostics").addEventListener("click", () => run(loadDiagnostics, "Diagnostics refreshed"));
+  $("#clear-diagnostics").addEventListener("click", async () => {
+    if (!confirm("Clear the in-memory diagnostic log?")) return;
+    await run(() => api("/diagnostics/errors", { method: "DELETE" }), "Diagnostics cleared");
+    await loadDiagnostics();
+  });
   $("#download-archive-button").addEventListener("click", () => {
     window.location.assign("/maintenance/archive");
   });
@@ -987,6 +1062,8 @@ async function loadAuthenticatedData() {
   $("#receipt-create-form input[name=purchase_date]").value = today();
   $("#income-form input[name=received_date]").value = today();
   await loadHouseholds();
+  state.uploadPolicy = await api("/receipt-captures/upload-policy");
+  $("#capture-upload-policy").textContent = `JPEG, PNG or WebP. Maximum file size: ${readableBytes(state.uploadPolicy.max_bytes)}.`;
   $("#receipt-create-form input[name=currency]").value = activeCurrency();
   $("#income-form input[name=currency]").value = activeCurrency();
   state.members = await api("/household/members");

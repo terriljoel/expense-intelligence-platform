@@ -1,8 +1,10 @@
 from datetime import datetime
-from typing import Literal, Self
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.base import UpdateRequest
 
 
 class HouseholdResponse(BaseModel):
@@ -14,7 +16,7 @@ class HouseholdResponse(BaseModel):
     updated_at: datetime
 
 
-class HouseholdUpdate(BaseModel):
+class HouseholdUpdate(UpdateRequest):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     default_currency: str | None = Field(
         default=None, min_length=3, max_length=3
@@ -39,13 +41,6 @@ class HouseholdUpdate(BaseModel):
         if len(cleaned) != 3 or not cleaned.isalpha():
             raise ValueError("Currency must be a three-letter code")
         return cleaned
-
-    @model_validator(mode="after")
-    def require_change(self) -> Self:
-        if not self.model_fields_set:
-            raise ValueError("At least one field must be supplied")
-        return self
-
 
 class MemberRoleUpdate(BaseModel):
     role: Literal["owner", "member"]

@@ -1,6 +1,6 @@
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import Any, Literal, Self
+from typing import Any, ClassVar, Literal, Self
 from uuid import UUID
 
 from pydantic import (
@@ -11,16 +11,28 @@ from pydantic import (
     model_validator,
 )
 
+from app.schemas.base import UpdateRequest
+
+ExpenseCategory = Literal[
+    "groceries",
+    "rent",
+    "health_insurance",
+    "transport",
+    "university_fees",
+    "utilities",
+    "subscriptions",
+    "dining",
+    "shopping",
+    "travel",
+    "other",
+]
+
 
 class ReceiptCreate(BaseModel):
     capture_id: UUID | None = None
     merchant_id: UUID | None = None
     payment_method_id: UUID | None = None
-    category: Literal[
-        "groceries", "rent", "health_insurance", "transport",
-        "university_fees", "utilities", "subscriptions", "dining",
-        "shopping", "travel", "other",
-    ] = "other"
+    category: ExpenseCategory = "other"
     purchase_date: date
     currency: str = Field(default="EUR", pattern=r"^[A-Z]{3}$")
     stated_total: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
@@ -36,13 +48,16 @@ class ReceiptCreate(BaseModel):
         return cleaned or None
 
 
-class ReceiptUpdate(BaseModel):
+class ReceiptUpdate(UpdateRequest):
+    non_nullable_fields: ClassVar[tuple[str, ...]] = (
+        "category",
+        "purchase_date",
+        "currency",
+        "stated_total",
+    )
+
     merchant_id: UUID | None = None
-    category: Literal[
-        "groceries", "rent", "health_insurance", "transport",
-        "university_fees", "utilities", "subscriptions", "dining",
-        "shopping", "travel", "other",
-    ] | None = None
+    category: ExpenseCategory | None = None
     purchase_date: date | None = None
     currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     stated_total: Decimal | None = Field(
@@ -61,24 +76,6 @@ class ReceiptUpdate(BaseModel):
             return None
         cleaned = value.strip()
         return cleaned or None
-
-    @model_validator(mode="after")
-    def require_valid_change(self) -> Self:
-        if not self.model_fields_set:
-            raise ValueError("At least one field must be supplied")
-        for required_field in (
-            "category",
-            "purchase_date",
-            "currency",
-            "stated_total",
-        ):
-            if (
-                required_field in self.model_fields_set
-                and getattr(self, required_field) is None
-            ):
-                raise ValueError(f"{required_field} cannot be null")
-        return self
-
 
 class ReceiptVoidRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
@@ -101,6 +98,7 @@ class ReceiptResponse(BaseModel):
     merchant_id: UUID | None
     created_by_user_id: UUID
     created_by_display_name: str | None = None
+    image_url: str | None = None
     purchase_date: date
     purchase_time: time | None
     merchant_address: str | None
@@ -193,7 +191,14 @@ class ReceiptItemResponse(BaseModel):
     updated_at: datetime
 
 
-class ReceiptItemUpdate(BaseModel):
+class ReceiptItemUpdate(UpdateRequest):
+    non_nullable_fields: ClassVar[tuple[str, ...]] = (
+        "position",
+        "line_type",
+        "description",
+        "line_total",
+    )
+
     position: int | None = Field(default=None, gt=0)
     line_type: ReceiptLineType | None = None
     raw_description: str | None = Field(default=None, max_length=500)
@@ -228,20 +233,7 @@ class ReceiptItemUpdate(BaseModel):
         return cleaned
 
     @model_validator(mode="after")
-    def require_valid_change(self) -> Self:
-        if not self.model_fields_set:
-            raise ValueError("At least one field must be supplied")
-        for required_field in (
-            "position",
-            "line_type",
-            "description",
-            "line_total",
-        ):
-            if (
-                required_field in self.model_fields_set
-                and getattr(self, required_field) is None
-            ):
-                raise ValueError(f"{required_field} cannot be null")
+    def validate_line_total_sign(self) -> Self:
         if self.line_type is not None and self.line_total is not None:
             if self.line_type == "discount" and self.line_total > 0:
                 raise ValueError("Discount line totals must be non-positive")

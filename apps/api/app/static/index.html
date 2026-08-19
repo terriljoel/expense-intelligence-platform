@@ -7,7 +7,7 @@
     <title>Expense Intelligence</title>
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/static/styles.css?v=20260805-product-insights" />
-    <script src="/static/app.js?v=20260805-recurring-frequency" defer></script>
+    <script src="/static/app.js?v=20260819-admin-diagnostics" defer></script>
     <script src="/static/js/product-intelligence.js?v=20260805-product-knowledge" defer></script>
   </head>
   <body>
@@ -140,6 +140,8 @@
               <label class="capture-dropzone">Take photo<input data-receipt-image type="file" accept="image/jpeg,image/png,image/webp" capture="environment" /></label>
               <label class="capture-dropzone">Choose from gallery<input data-receipt-image type="file" accept="image/jpeg,image/png,image/webp" /></label>
             </div>
+            <p id="capture-upload-policy" class="muted">JPEG, PNG or WebP receipt image.</p>
+            <p id="capture-upload-error" class="form-error" role="alert" hidden></p>
             <img id="capture-preview" class="capture-preview" alt="Receipt preview" hidden />
             <button class="primary" type="submit">Upload and read text</button>
           </form>
@@ -222,11 +224,20 @@
             </div>
           </form>
 
+          <section id="receipt-image-card" class="card" hidden>
+            <div class="section-heading">
+              <div><h2>Receipt image</h2><p class="muted">Loaded only when requested.</p></div>
+              <div class="action-row"><button id="view-receipt-image" class="secondary" type="button">View image</button><a id="download-receipt-image" class="secondary" href="#">Download image</a></div>
+            </div>
+            <img id="receipt-stored-image" class="capture-image" alt="Stored receipt" hidden />
+          </section>
+
           <section class="card">
             <div class="section-heading"><h2>Balance check</h2><span id="reconcile-badge" class="status">Checking</span></div>
             <div id="reconciliation" class="metric-grid"></div>
             <div class="action-row">
               <button id="approve-receipt" class="primary">Approve receipt</button>
+              <button id="reopen-receipt" class="secondary" type="button">Reopen for editing</button>
               <button id="void-receipt" class="danger">Void receipt</button>
             </div>
           </section>
@@ -365,6 +376,13 @@
             </label>
             <button class="danger" type="submit">Reset household data</button>
           </form>
+        </section>
+        <section id="diagnostics-card" class="card" hidden>
+          <div class="section-heading">
+            <div><h2>Application diagnostics</h2><p class="muted">Global Admin only · latest 100 entries · cleared when the app restarts</p></div>
+            <div class="action-row"><button id="refresh-diagnostics" class="secondary" type="button">Refresh</button><button id="clear-diagnostics" class="text-button" type="button">Clear</button></div>
+          </div>
+          <div id="diagnostics-list" class="diagnostics-list"><p class="muted">No errors recorded.</p></div>
         </section>
       </section>
 

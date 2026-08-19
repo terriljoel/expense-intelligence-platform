@@ -1,11 +1,18 @@
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import CurrentPrincipal, get_current_principal
+from app.api.dependencies import (
+    CurrentPrincipal,
+    get_current_principal,
+    get_receipt_image_storage,
+)
 from app.db.session import get_db_session
-from app.models import PaymentMethod, Receipt, ReceiptPayment, User
+from app.models import PaymentMethod, Receipt, ReceiptCapture, ReceiptPayment, User
 from app.schemas.receipt import (
     AuditEventResponse,
     ReceiptCreate,
@@ -48,12 +55,18 @@ from app.services.receipt import (
     list_receipt_payments,
     list_receipts,
     reconcile_receipt,
+    reopen_receipt,
     remove_receipt_item,
     remove_receipt_payment,
     update_receipt,
     update_receipt_item,
     update_receipt_payment,
     void_receipt,
+)
+from app.services.receipt_image_storage import (
+    ReceiptImageNotFoundError,
+    ReceiptImageStorage,
+    ReceiptImageStorageError,
 )
 
 
@@ -66,8 +79,48 @@ def _receipt_response(session: Session, receipt: Receipt) -> ReceiptResponse:
         update={
             "created_by_display_name": (
                 creator.display_name if creator is not None else None
-            )
+            ),
+            "image_url": (
+                f"/receipts/{receipt.id}/image" if receipt.image_object_key else None
+            ),
         }
+    )
+
+
+@router.get("/{receipt_id}/image", response_class=Response)
+def get_receipt_image(
+    receipt_id: UUID,
+    download: bool = Query(default=False),
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    session: Session = Depends(get_db_session),
+    storage: ReceiptImageStorage = Depends(get_receipt_image_storage),
+) -> Response:
+    try:
+        receipt = get_receipt(
+            session, household_id=principal.household_id, receipt_id=receipt_id
+        )
+        if not receipt.image_object_key:
+            raise ReceiptImageNotFoundError
+        content = storage.get(receipt.image_object_key)
+    except (ReceiptNotFoundError, ReceiptImageNotFoundError) as exc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "Receipt image not found"
+        ) from exc
+    except ReceiptImageStorageError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    capture = session.scalar(
+        select(ReceiptCapture).where(ReceiptCapture.receipt_id == receipt_id)
+    )
+    filename = capture.original_filename if capture else f"receipt-{receipt_id}.jpg"
+    disposition = "attachment" if download else "inline"
+    return Response(
+        content=content,
+        media_type=capture.media_type if capture else "application/octet-stream",
+        headers={
+            "Content-Disposition": (
+                f"{disposition}; filename*=UTF-8''{quote(filename or 'receipt-image', safe='')}"
+            )
+        },
     )
 
 
@@ -616,6 +669,28 @@ def post_receipt_approval(
             detail="Receipt items and payments do not reconcile",
         ) from exc
 
+    return _receipt_response(session, receipt)
+
+
+@router.post("/{receipt_id}/reopen", response_model=ReceiptResponse)
+def post_receipt_reopen(
+    receipt_id: UUID,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    session: Session = Depends(get_db_session),
+) -> ReceiptResponse:
+    try:
+        receipt = reopen_receipt(
+            session,
+            household_id=principal.household_id,
+            receipt_id=receipt_id,
+            actor_user_id=principal.user_id,
+        )
+    except ReceiptNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Receipt not found") from exc
+    except ReceiptNotEditableError as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Only approved receipts can be reopened"
+        ) from exc
     return _receipt_response(session, receipt)
 
 

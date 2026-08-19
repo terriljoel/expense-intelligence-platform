@@ -3,7 +3,8 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi import Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -19,10 +20,14 @@ from app.api.routes.maintenance import router as maintenance_router
 from app.api.routes.dashboard import router as dashboard_router
 from app.api.routes.products import router as products_router
 from app.api.routes.recurring import router as recurring_router
+from app.api.routes.diagnostics import router as diagnostics_router
 from app.db.session import engine
+from app.services.diagnostics import record_error
+import logging
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -49,7 +54,26 @@ app.include_router(maintenance_router)
 app.include_router(dashboard_router)
 app.include_router(products_router)
 app.include_router(recurring_router)
+app.include_router(diagnostics_router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.exception_handler(Exception)
+async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    error_id = record_error(
+        message=str(exc) or type(exc).__name__,
+        method=request.method,
+        path=request.url.path,
+        exception=exc,
+    )
+    logger.exception("Unhandled request error [%s]", error_id, exc_info=exc)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "detail": "An unexpected server error occurred",
+            "error_id": error_id,
+        },
+    )
 
 
 @app.get("/", include_in_schema=False, response_class=FileResponse)

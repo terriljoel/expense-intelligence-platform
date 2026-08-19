@@ -1,9 +1,11 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal, Self
+from typing import ClassVar, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.schemas.base import UpdateRequest
 
 
 PaymentMethodType = Literal[
@@ -95,7 +97,12 @@ class ReceiptPaymentCreate(BaseModel):
     amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
 
 
-class ReceiptPaymentUpdate(BaseModel):
+class ReceiptPaymentUpdate(UpdateRequest):
+    non_nullable_fields: ClassVar[tuple[str, ...]] = (
+        "payment_method_id",
+        "amount",
+    )
+
     payment_method_id: UUID | None = None
     amount: Decimal | None = Field(
         default=None,
@@ -103,19 +110,6 @@ class ReceiptPaymentUpdate(BaseModel):
         max_digits=14,
         decimal_places=2,
     )
-
-    @model_validator(mode="after")
-    def require_valid_change(self) -> Self:
-        if not self.model_fields_set:
-            raise ValueError("At least one field must be supplied")
-        for required_field in ("payment_method_id", "amount"):
-            if (
-                required_field in self.model_fields_set
-                and getattr(self, required_field) is None
-            ):
-                raise ValueError(f"{required_field} cannot be null")
-        return self
-
 
 class ReceiptPaymentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

@@ -13,11 +13,16 @@ from fastapi import (
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import CurrentPrincipal, get_current_principal
+from app.api.dependencies import (
+    CurrentPrincipal,
+    get_current_principal,
+    get_receipt_image_storage,
+)
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
 from app.schemas.receipt_capture import ReceiptCaptureResponse
 from app.services.receipt_capture import (
+    ALLOWED_IMAGE_TYPES,
     CaptureAlreadyUsedError,
     CaptureNotFoundError,
     CaptureValidationError,
@@ -34,17 +39,21 @@ from app.services.receipt_image_storage import (
     ReceiptImageNotFoundError,
     ReceiptImageStorage,
     ReceiptImageStorageError,
-    build_receipt_image_storage,
 )
 
 
 router = APIRouter(prefix="/receipt-captures", tags=["receipt captures"])
 
 
-def get_receipt_image_storage(
+@router.get("/upload-policy")
+def get_upload_policy(
     settings: Settings = Depends(get_settings),
-) -> ReceiptImageStorage:
-    return build_receipt_image_storage(settings)
+) -> dict[str, object]:
+    return {
+        "max_bytes": settings.receipt_image_max_bytes,
+        "max_megabytes": round(settings.receipt_image_max_bytes / (1024 * 1024), 1),
+        "allowed_media_types": sorted(ALLOWED_IMAGE_TYPES),
+    }
 
 
 def _capture_response(capture: object) -> ReceiptCaptureResponse:
@@ -80,8 +89,13 @@ async def post_receipt_capture(
             content=content,
         )
     except CaptureValidationError as exc:
+        error_status = (
+            status.HTTP_413_CONTENT_TOO_LARGE
+            if len(content) > settings.receipt_image_max_bytes
+            else status.HTTP_422_UNPROCESSABLE_CONTENT
+        )
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=error_status,
             detail=str(exc),
         ) from exc
     except DuplicateCaptureError as exc:

@@ -1,9 +1,11 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal, Self
+from typing import ClassVar, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.schemas.base import UpdateRequest
 
 
 IncomeType = Literal[
@@ -14,15 +16,21 @@ IncomeType = Literal[
     "refund",
     "other",
 ]
+IncomeCategory = Literal[
+    "salary_payslip",
+    "freelance",
+    "interest",
+    "gift",
+    "refund",
+    "benefits",
+    "other",
+]
 
 
 class IncomeCreate(BaseModel):
     source: str = Field(min_length=1, max_length=200)
     income_type: IncomeType = "other"
-    category: Literal[
-        "salary_payslip", "freelance", "interest", "gift", "refund",
-        "benefits", "other",
-    ] = "other"
+    category: IncomeCategory = "other"
     received_date: date
     amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
     currency: str = Field(default="EUR", pattern=r"^[A-Z]{3}$")
@@ -46,13 +54,19 @@ class IncomeCreate(BaseModel):
         return cleaned or None
 
 
-class IncomeUpdate(BaseModel):
+class IncomeUpdate(UpdateRequest):
+    non_nullable_fields: ClassVar[tuple[str, ...]] = (
+        "source",
+        "income_type",
+        "category",
+        "received_date",
+        "amount",
+        "currency",
+    )
+
     source: str | None = Field(default=None, min_length=1, max_length=200)
     income_type: IncomeType | None = None
-    category: Literal[
-        "salary_payslip", "freelance", "interest", "gift", "refund",
-        "benefits", "other",
-    ] | None = None
+    category: IncomeCategory | None = None
     received_date: date | None = None
     amount: Decimal | None = Field(
         default=None, gt=0, max_digits=14, decimal_places=2
@@ -78,23 +92,6 @@ class IncomeUpdate(BaseModel):
             return None
         cleaned = value.strip()
         return cleaned or None
-
-    @model_validator(mode="after")
-    def require_valid_change(self) -> Self:
-        if not self.model_fields_set:
-            raise ValueError("At least one field must be supplied")
-        for field_name in (
-            "source",
-            "income_type",
-            "category",
-            "received_date",
-            "amount",
-            "currency",
-        ):
-            if field_name in self.model_fields_set and getattr(self, field_name) is None:
-                raise ValueError(f"{field_name} cannot be null")
-        return self
-
 
 class IncomeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

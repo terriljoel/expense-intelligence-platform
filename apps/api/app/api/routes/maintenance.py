@@ -4,8 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import CurrentPrincipal, require_household_admin
-from app.api.routes.receipt_captures import get_receipt_image_storage
+from app.api.dependencies import (
+    CurrentPrincipal,
+    get_receipt_image_storage,
+    require_household_admin,
+)
 from app.db.session import get_db_session
 from app.schemas.maintenance import (
     HouseholdResetRequest,
@@ -95,4 +98,3 @@ def reset_household(
         image_objects_not_found=not_found,
         image_delete_failures=failures,
     )
-

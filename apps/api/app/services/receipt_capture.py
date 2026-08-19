@@ -28,6 +28,7 @@ from app.services.receipt_image_storage import (
     ReceiptImageStorage,
     ReceiptImageStorageError,
 )
+from app.services.diagnostics import record_error
 
 
 ALLOWED_IMAGE_TYPES = {
@@ -197,8 +198,12 @@ def extract_receipt_suggestions(raw_text: str) -> ReceiptSuggestions:
     total = candidates[-1] if candidates else None
     payment = detect_payment_details(raw_text)
     return ReceiptSuggestions(
-        merchant, purchase_date, currency, total,
-        payment_type=payment[0], payment_provider=payment[1],
+        merchant,
+        purchase_date,
+        currency,
+        total,
+        payment_type=payment[0],
+        payment_provider=payment[1],
         payment_last_four=payment[2],
         receipt_number=detect_receipt_number(raw_text),
     )
@@ -208,11 +213,18 @@ def detect_payment_details(raw_text: str) -> tuple[str | None, str | None, str |
     """Extract conservative payment hints from receipt text."""
     lowered = raw_text.casefold()
     provider = next(
-        (name for token, name in (
-            ("mastercard", "Mastercard"), ("master card", "Mastercard"),
-            ("visa", "Visa"), ("paypal", "PayPal"),
-            ("american express", "American Express"), ("amex", "American Express"),
-        ) if token in lowered),
+        (
+            name
+            for token, name in (
+                ("mastercard", "Mastercard"),
+                ("master card", "Mastercard"),
+                ("visa", "Visa"),
+                ("paypal", "PayPal"),
+                ("american express", "American Express"),
+                ("amex", "American Express"),
+            )
+            if token in lowered
+        ),
         None,
     )
     if re.search(r"\b(?:bar|cash|bargeld)\b", lowered):
@@ -272,11 +284,15 @@ def _match_payment_method(
     provider: str | None,
     last_four: str | None,
 ) -> tuple[UUID | None, str | None]:
-    methods = list(session.scalars(select(PaymentMethod).where(
-        PaymentMethod.household_id == household_id,
-        PaymentMethod.user_id == user_id,
-        PaymentMethod.is_active.is_(True),
-    )))
+    methods = list(
+        session.scalars(
+            select(PaymentMethod).where(
+                PaymentMethod.household_id == household_id,
+                PaymentMethod.user_id == user_id,
+                PaymentMethod.is_active.is_(True),
+            )
+        )
+    )
     if last_four:
         matches = [method for method in methods if method.last_four == last_four]
         if len(matches) == 1:
@@ -286,10 +302,16 @@ def _match_payment_method(
     candidates = methods
     evidence: list[str] = []
     if provider:
-        candidates = [method for method in candidates if provider.casefold() in (method.provider or method.name).casefold()]
+        candidates = [
+            method
+            for method in candidates
+            if provider.casefold() in (method.provider or method.name).casefold()
+        ]
         evidence.append(provider)
     if payment_type:
-        candidates = [method for method in candidates if method.method_type == payment_type]
+        candidates = [
+            method for method in candidates if method.method_type == payment_type
+        ]
         evidence.append(payment_type.replace("_", " "))
     if evidence and len(candidates) == 1:
         return candidates[0].id, f"OCR detected {' / '.join(evidence)}"
@@ -303,6 +325,12 @@ def _safe_original_filename(filename: str | None) -> str | None:
         return None
     cleaned = Path(filename).name.replace("\x00", "").strip()
     return cleaned[:255] or None
+
+
+def _readable_size(byte_count: int) -> str:
+    if byte_count < 1024 * 1024:
+        return f"{byte_count / 1024:g} KB"
+    return f"{byte_count / (1024 * 1024):g} MB"
 
 
 def create_capture(
@@ -320,7 +348,8 @@ def create_capture(
         raise CaptureValidationError("Choose a non-empty receipt image")
     if len(content) > settings.receipt_image_max_bytes:
         raise CaptureValidationError(
-            f"Receipt image exceeds the {settings.receipt_image_max_bytes // (1024 * 1024)} MB limit"
+            f"Receipt image exceeds the {_readable_size(settings.receipt_image_max_bytes)} upload limit. "
+            "Choose a smaller image or reduce its resolution."
         )
     image_type = (media_type or "").lower()
     allowed = ALLOWED_IMAGE_TYPES.get(image_type)
@@ -413,15 +442,23 @@ def process_capture_ocr(
         )
         suggestions = replace(
             suggestions,
-            merchant_address=suggestions.merchant_address or detect_merchant_address(
-                result.raw_text
-            ),
+            merchant_address=suggestions.merchant_address
+            or detect_merchant_address(result.raw_text),
             payment_type=suggestions.payment_type or detected_type,
             payment_provider=suggestions.payment_provider or detected_provider,
             payment_last_four=suggestions.payment_last_four or detected_last_four,
-            receipt_number=suggestions.receipt_number or detect_receipt_number(result.raw_text),
+            receipt_number=suggestions.receipt_number
+            or detect_receipt_number(result.raw_text),
         )
     except (OcrProcessingError, ReceiptImageStorageError) as exc:
+        record_error(
+            message=str(exc),
+            method="OCR",
+            path=f"/receipt-captures/{capture_id}/ocr",
+            status_code=422,
+            exception=exc,
+            level="warning",
+        )
         capture.ocr_status = "failed"
         capture.ocr_error = str(exc)[:500]
         capture.ocr_completed_at = datetime.now(timezone.utc)
@@ -472,13 +509,15 @@ def process_capture_ocr(
     capture.duplicate_match_level = None
     capture.duplicate_reason = None
     if suggestions.merchant_name and suggestions.purchase_date:
-        merchant = session.scalar(select(Merchant).where(
-            Merchant.household_id == household_id,
-            Merchant.normalized_name == normalize_merchant_name(suggestions.merchant_name),
-            Merchant.normalized_address == normalize_merchant_address(
-                suggestions.merchant_address
-            ),
-        ))
+        merchant = session.scalar(
+            select(Merchant).where(
+                Merchant.household_id == household_id,
+                Merchant.normalized_name
+                == normalize_merchant_name(suggestions.merchant_name),
+                Merchant.normalized_address
+                == normalize_merchant_address(suggestions.merchant_address),
+            )
+        )
         if merchant is not None:
             duplicate = find_duplicate_receipt(
                 session,

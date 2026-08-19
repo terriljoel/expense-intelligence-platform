@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 from app.models import (
     AuditEvent,
     Merchant,
-    PaymentMethod,
     Receipt,
     ReceiptCapture,
     ReceiptItem,
@@ -23,6 +22,10 @@ from app.services.duplicate_receipt import (
     DuplicateMatch,
     find_duplicate_receipt,
     normalize_receipt_number,
+)
+from app.services.payment_method import (
+    PaymentMethodNotFoundError as PaymentMethodNotFoundError,
+    get_payment_method,
 )
 from app.services.text_normalization import normalize_receipt_item
 
@@ -49,10 +52,6 @@ class ReceiptItemNotFoundError(Exception):
 
 class ReceiptItemAmountError(Exception):
     """Raised when an updated line type and amount have an invalid sign."""
-
-
-class PaymentMethodNotFoundError(Exception):
-    """Raised when the selected payment method is unavailable to the user."""
 
 
 class ReceiptPaymentConflictError(Exception):
@@ -298,21 +297,17 @@ def create_receipt(
                 line_total=Decimal(str(item["line_total"])),
             )
 
-    active_methods = list(
-        session.scalars(
-            select(PaymentMethod).where(
-                PaymentMethod.household_id == household_id,
-                PaymentMethod.user_id == created_by_user_id,
-                PaymentMethod.is_active.is_(True),
-            )
+    selected_method = (
+        get_payment_method(
+            session,
+            household_id=household_id,
+            user_id=created_by_user_id,
+            payment_method_id=payment_method_id,
+            active_only=True,
         )
+        if payment_method_id is not None
+        else None
     )
-    selected_method = next(
-        (method for method in active_methods if method.id == payment_method_id),
-        None,
-    )
-    if payment_method_id is not None and selected_method is None:
-        raise PaymentMethodNotFoundError
     if selected_method is not None and stated_total > 0:
         add_receipt_payment(
             session,
@@ -344,13 +339,11 @@ def get_receipt(
     return receipt
 
 
-def update_receipt(
+def _get_editable_receipt(
     session: Session,
     *,
     household_id: UUID,
     receipt_id: UUID,
-    actor_user_id: UUID,
-    changes: dict[str, object],
 ) -> Receipt:
     receipt = get_receipt(
         session,
@@ -360,6 +353,20 @@ def update_receipt(
     )
     if receipt.status != "draft":
         raise ReceiptNotEditableError
+    return receipt
+
+
+def update_receipt(
+    session: Session,
+    *,
+    household_id: UUID,
+    receipt_id: UUID,
+    actor_user_id: UUID,
+    changes: dict[str, object],
+) -> Receipt:
+    receipt = _get_editable_receipt(
+        session, household_id=household_id, receipt_id=receipt_id
+    )
 
     if "merchant_id" in changes and changes["merchant_id"] is not None:
         merchant_exists = session.scalar(
@@ -423,14 +430,9 @@ def add_receipt_item(
     unit_price: Decimal | None,
     line_total: Decimal,
 ) -> ReceiptItem:
-    receipt = get_receipt(
-        session,
-        household_id=household_id,
-        receipt_id=receipt_id,
-        for_update=True,
+    _get_editable_receipt(
+        session, household_id=household_id, receipt_id=receipt_id
     )
-    if receipt.status != "draft":
-        raise ReceiptNotEditableError
 
     existing_position = session.scalar(
         select(ReceiptItem.id).where(
@@ -525,14 +527,9 @@ def update_receipt_item(
     actor_user_id: UUID,
     changes: dict[str, object],
 ) -> ReceiptItem:
-    receipt = get_receipt(
-        session,
-        household_id=household_id,
-        receipt_id=receipt_id,
-        for_update=True,
+    _get_editable_receipt(
+        session, household_id=household_id, receipt_id=receipt_id
     )
-    if receipt.status != "draft":
-        raise ReceiptNotEditableError
     item = get_receipt_item(
         session,
         household_id=household_id,
@@ -613,14 +610,9 @@ def remove_receipt_item(
     item_id: UUID,
     actor_user_id: UUID,
 ) -> None:
-    receipt = get_receipt(
-        session,
-        household_id=household_id,
-        receipt_id=receipt_id,
-        for_update=True,
+    _get_editable_receipt(
+        session, household_id=household_id, receipt_id=receipt_id
     )
-    if receipt.status != "draft":
-        raise ReceiptNotEditableError
     item = get_receipt_item(
         session,
         household_id=household_id,
@@ -656,25 +648,17 @@ def add_receipt_payment(
     payment_method_id: UUID,
     amount: Decimal,
 ) -> ReceiptPayment:
-    receipt = get_receipt(
+    _get_editable_receipt(
+        session, household_id=household_id, receipt_id=receipt_id
+    )
+
+    get_payment_method(
         session,
         household_id=household_id,
-        receipt_id=receipt_id,
-        for_update=True,
+        user_id=user_id,
+        payment_method_id=payment_method_id,
+        active_only=True,
     )
-    if receipt.status != "draft":
-        raise ReceiptNotEditableError
-
-    payment_method = session.scalar(
-        select(PaymentMethod).where(
-            PaymentMethod.id == payment_method_id,
-            PaymentMethod.household_id == household_id,
-            PaymentMethod.user_id == user_id,
-            PaymentMethod.is_active.is_(True),
-        )
-    )
-    if payment_method is None:
-        raise PaymentMethodNotFoundError
 
     existing_payment = session.scalar(
         select(ReceiptPayment.id).where(
@@ -765,14 +749,9 @@ def update_receipt_payment(
     user_id: UUID,
     changes: dict[str, object],
 ) -> ReceiptPayment:
-    receipt = get_receipt(
-        session,
-        household_id=household_id,
-        receipt_id=receipt_id,
-        for_update=True,
+    _get_editable_receipt(
+        session, household_id=household_id, receipt_id=receipt_id
     )
-    if receipt.status != "draft":
-        raise ReceiptNotEditableError
     payment = get_receipt_payment(
         session,
         household_id=household_id,
@@ -787,16 +766,13 @@ def update_receipt_payment(
         payment.payment_method_id,
     )
     if new_method_id != payment.payment_method_id:
-        payment_method = session.scalar(
-            select(PaymentMethod).where(
-                PaymentMethod.id == new_method_id,
-                PaymentMethod.household_id == household_id,
-                PaymentMethod.user_id == user_id,
-                PaymentMethod.is_active.is_(True),
-            )
+        get_payment_method(
+            session,
+            household_id=household_id,
+            user_id=user_id,
+            payment_method_id=new_method_id,
+            active_only=True,
         )
-        if payment_method is None:
-            raise PaymentMethodNotFoundError
         duplicate = session.scalar(
             select(ReceiptPayment.id).where(
                 ReceiptPayment.receipt_id == receipt_id,
@@ -835,14 +811,9 @@ def remove_receipt_payment(
     payment_id: UUID,
     user_id: UUID,
 ) -> None:
-    receipt = get_receipt(
-        session,
-        household_id=household_id,
-        receipt_id=receipt_id,
-        for_update=True,
+    _get_editable_receipt(
+        session, household_id=household_id, receipt_id=receipt_id
     )
-    if receipt.status != "draft":
-        raise ReceiptNotEditableError
     payment = get_receipt_payment(
         session,
         household_id=household_id,
@@ -992,14 +963,9 @@ def approve_receipt(
     receipt_id: UUID,
     actor_user_id: UUID,
 ) -> Receipt:
-    receipt = get_receipt(
-        session,
-        household_id=household_id,
-        receipt_id=receipt_id,
-        for_update=True,
+    receipt = _get_editable_receipt(
+        session, household_id=household_id, receipt_id=receipt_id
     )
-    if receipt.status != "draft":
-        raise ReceiptNotEditableError
 
     reconciliation = reconcile_receipt(
         session,
@@ -1020,6 +986,35 @@ def approve_receipt(
         receipt_id=receipt_id,
         event_type="receipt_approved",
         event_data={"stated_total": str(receipt.stated_total)},
+    )
+    return receipt
+
+
+def reopen_receipt(
+    session: Session,
+    *,
+    household_id: UUID,
+    receipt_id: UUID,
+    actor_user_id: UUID,
+) -> Receipt:
+    receipt = get_receipt(
+        session,
+        household_id=household_id,
+        receipt_id=receipt_id,
+        for_update=True,
+    )
+    if receipt.status != "approved":
+        raise ReceiptNotEditableError
+    receipt.status = "draft"
+    receipt.approved_at = None
+    session.flush()
+    record_audit_event(
+        session,
+        household_id=household_id,
+        actor_user_id=actor_user_id,
+        receipt_id=receipt_id,
+        event_type="receipt_updated",
+        event_data={"changes": {"status": {"from": "approved", "to": "draft"}}},
     )
     return receipt
 

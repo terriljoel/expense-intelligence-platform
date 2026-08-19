@@ -97,9 +97,7 @@ def test_update_full_draft_and_reconcile(
         f"/receipts/{receipt_id}/payments/{payment_id}",
         json={"amount": "12.00"},
     )
-    reconciliation = client.get(
-        f"/receipts/{receipt_id}/reconciliation"
-    ).json()
+    reconciliation = client.get(f"/receipts/{receipt_id}/reconciliation").json()
     events = client.get(f"/receipts/{receipt_id}/audit-events").json()
 
     assert receipt_update.status_code == 200
@@ -128,12 +126,8 @@ def test_remove_draft_item_and_payment_records_audit(
     client, method_id = correction_context
     receipt_id, item_id, payment_id = create_draft_parts(client, method_id)
 
-    item_delete = client.delete(
-        f"/receipts/{receipt_id}/items/{item_id}"
-    )
-    payment_delete = client.delete(
-        f"/receipts/{receipt_id}/payments/{payment_id}"
-    )
+    item_delete = client.delete(f"/receipts/{receipt_id}/items/{item_id}")
+    payment_delete = client.delete(f"/receipts/{receipt_id}/payments/{payment_id}")
     items = client.get(f"/receipts/{receipt_id}/items").json()
     payments = client.get(f"/receipts/{receipt_id}/payments").json()
     events = client.get(f"/receipts/{receipt_id}/audit-events").json()
@@ -178,23 +172,25 @@ def test_item_update_validates_position_and_final_sign(
     assert invalid_sign.status_code == 422
 
 
-def test_approved_receipt_is_immutable_but_can_be_voided(
+def test_approved_receipt_can_be_reopened_corrected_and_approved_again(
     correction_context: tuple[TestClient, str],
 ) -> None:
     client, method_id = correction_context
     receipt_id, item_id, payment_id = create_draft_parts(client, method_id)
     approval = client.post(f"/receipts/{receipt_id}/approve")
 
+    blocked_edit = client.patch(f"/receipts/{receipt_id}", json={"notes": "too late"})
+    reopened = client.post(f"/receipts/{receipt_id}/reopen")
     receipt_edit = client.patch(
-        f"/receipts/{receipt_id}", json={"notes": "too late"}
+        f"/receipts/{receipt_id}", json={"stated_total": "12.00"}
     )
     item_edit = client.patch(
-        f"/receipts/{receipt_id}/items/{item_id}",
-        json={"line_total": "9.00"},
+        f"/receipts/{receipt_id}/items/{item_id}", json={"line_total": "12.00"}
     )
-    payment_delete = client.delete(
-        f"/receipts/{receipt_id}/payments/{payment_id}"
+    payment_edit = client.patch(
+        f"/receipts/{receipt_id}/payments/{payment_id}", json={"amount": "12.00"}
     )
+    second_approval = client.post(f"/receipts/{receipt_id}/approve")
     void_response = client.post(
         f"/receipts/{receipt_id}/void",
         json={"reason": "Duplicate receipt"},
@@ -206,9 +202,15 @@ def test_approved_receipt_is_immutable_but_can_be_voided(
     events = client.get(f"/receipts/{receipt_id}/audit-events").json()
 
     assert approval.status_code == 200
-    assert receipt_edit.status_code == 409
-    assert item_edit.status_code == 409
-    assert payment_delete.status_code == 409
+    assert blocked_edit.status_code == 409
+    assert reopened.status_code == 200
+    assert reopened.json()["status"] == "draft"
+    assert reopened.json()["approved_at"] is None
+    assert receipt_edit.status_code == 200
+    assert item_edit.status_code == 200
+    assert payment_edit.status_code == 200
+    assert second_approval.status_code == 200
+    assert second_approval.json()["stated_total"] == "12.00"
     assert void_response.status_code == 200
     assert void_response.json()["status"] == "voided"
     assert void_response.json()["voided_at"] is not None

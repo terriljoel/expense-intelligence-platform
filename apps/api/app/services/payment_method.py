@@ -74,12 +74,15 @@ def get_payment_method(
     user_id: UUID,
     payment_method_id: UUID,
     for_update: bool = False,
+    active_only: bool = False,
 ) -> PaymentMethod:
     statement = select(PaymentMethod).where(
         PaymentMethod.id == payment_method_id,
         PaymentMethod.household_id == household_id,
         PaymentMethod.user_id == user_id,
     )
+    if active_only:
+        statement = statement.where(PaymentMethod.is_active.is_(True))
     if for_update:
         statement = statement.with_for_update()
     method = session.scalar(statement)
