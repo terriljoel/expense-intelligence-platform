@@ -1,7 +1,10 @@
 from datetime import datetime
+from typing import ClassVar
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.schemas.base import UpdateRequest
 
 
 class MerchantCreate(BaseModel):
@@ -23,6 +26,30 @@ class MerchantCreate(BaseModel):
             return None
         cleaned = " ".join(value.split())
         return cleaned or None
+
+
+class MerchantUpdate(UpdateRequest):
+    non_nullable_fields: ClassVar[tuple[str, ...]] = ("name",)
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    address: str | None = Field(default=None, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_whitespace(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("Merchant name cannot be blank")
+        return cleaned
+
+    @field_validator("address")
+    @classmethod
+    def clean_address(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return " ".join(value.split()) or None
 
 
 class MerchantResponse(BaseModel):

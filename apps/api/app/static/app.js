@@ -367,8 +367,8 @@ async function loadSetup() {
   ]);
   renderSelects();
   renderSettings();
-  $("#diagnostics-card").hidden = !state.user?.is_global_admin;
-  if (state.user?.is_global_admin) await loadDiagnostics();
+  $("#diagnostics-card").hidden = !canAdministerHousehold();
+  if (canAdministerHousehold()) await loadDiagnostics();
 }
 
 async function loadDiagnostics() {
@@ -400,7 +400,9 @@ function renderSelects() {
   $$('[data-payment-select]').forEach((select) => {
     const selected = select.value;
     const placeholder = select.name === "destination_payment_method_id" ? "Not specified" : (select.closest("#receipt-create-form") ? "Add payment later" : "Choose method");
-    select.innerHTML = `<option value="">${placeholder}</option>${state.methods.filter((method) => method.is_active).map((method) => `<option value="${method.id}">${escapeHtml(methodName(method.id))}</option>`).join("")}`;
+    const allowsHouseholdMethods = Boolean(select.closest("#receipt-create-form, #payment-form"));
+    const methods = state.methods.filter((method) => method.is_active && (allowsHouseholdMethods || method.user_id === state.user.user_id));
+    select.innerHTML = `<option value="">${placeholder}</option>${methods.map((method) => `<option value="${method.id}">${escapeHtml(methodName(method.id))}${allowsHouseholdMethods && canAdministerHousehold() ? ` — ${escapeHtml(memberName(method.user_id))}` : ""}</option>`).join("")}`;
     select.value = selected;
   });
 }
@@ -650,8 +652,14 @@ async function refreshReceipt() {
 }
 
 function renderSettings() {
-  $("#merchant-list").innerHTML = state.merchants.length ? state.merchants.map((merchant) => `<div class="setting-item"><div class="line-copy"><strong>${escapeHtml(merchant.name)}</strong><small>${escapeHtml(merchant.address || "No branch address")}</small></div><small class="muted">${formatTime(merchant.created_at)}</small></div>`).join("") : `<p class="muted">No merchants yet.</p>`;
-  $("#method-list").innerHTML = state.methods.length ? state.methods.map((method) => `<div class="setting-item"><div class="line-copy"><strong>${escapeHtml(methodName(method.id))}</strong><small>${titleCase(method.method_type)}${method.provider ? ` · ${escapeHtml(method.provider)}` : ""}${method.is_active ? "" : " · Inactive"}</small></div>${method.is_active ? `<button class="icon-button delete" data-deactivate-method="${method.id}">Deactivate</button>` : ""}</div>`).join("") : `<p class="muted">No payment methods yet.</p>`;
+  $("#merchant-list").innerHTML = state.merchants.length ? state.merchants.map((merchant) => `<div class="setting-item"><div class="line-copy"><strong>${escapeHtml(merchant.name)}</strong><small>${escapeHtml(merchant.address || "No branch address")}</small></div><button type="button" class="secondary" data-edit-merchant="${merchant.id}">Edit</button></div>`).join("") : `<p class="muted">No merchants yet.</p>`;
+  $("#method-list").innerHTML = state.methods.length ? state.methods.map((method) => `<div class="setting-item"><div class="line-copy"><strong>${escapeHtml(methodName(method.id))}</strong><small>${canAdministerHousehold() ? `${escapeHtml(memberName(method.user_id))} · ` : ""}${titleCase(method.method_type)}${method.provider ? ` · ${escapeHtml(method.provider)}` : ""}${method.is_active ? "" : " · Inactive"}</small></div><div class="line-actions"><button class="icon-button" data-edit-method="${method.id}">Edit</button>${method.is_active ? `<button class="icon-button delete" data-deactivate-method="${method.id}">Deactivate</button>` : ""}</div></div>`).join("") : `<p class="muted">No payment methods yet.</p>`;
+}
+
+function resetMethodForm() {
+  const form = $("#method-form"); form.reset(); form.elements.edit_id.value = "";
+  form.querySelector("button[type=submit]").textContent = "Add method";
+  $("[data-cancel-method]").hidden = true;
 }
 
 function resetItemForm() {
@@ -931,7 +939,18 @@ function bindEvents() {
   $("#void-receipt").addEventListener("click", async () => { const reason = prompt("Why is this receipt being voided? (optional)"); if (reason !== null) { const result = await run(() => api(`/receipts/${state.receipt.id}/void`, { method: "POST", body: JSON.stringify({ reason: reason || null }) }), "Receipt voided").catch(() => null); if (result) await refreshReceipt(); } });
 
   $("#merchant-form").addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const result = await run(() => api("/merchants", { method: "POST", body: JSON.stringify({ name: data.get("name"), address: data.get("address") || null }) }), "Merchant added").catch(() => null); if (result) { form.reset(); await loadSetup(); await loadReceipts(); } });
-  $("#method-form").addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const result = await run(() => api("/payment-methods", { method: "POST", body: JSON.stringify({ name: data.get("name"), method_type: data.get("method_type"), provider: data.get("provider") || null, last_four: data.get("last_four") || null }) }), "Payment method added").catch(() => null); if (result) { form.reset(); await loadSetup(); } });
+  $("#merchant-list").addEventListener("click", async (event) => {
+    const merchant = state.merchants.find((item) => item.id === event.target.closest("[data-edit-merchant]")?.dataset.editMerchant);
+    if (!merchant) return;
+    const name = window.prompt("Merchant name", merchant.name);
+    if (name === null) return;
+    const address = window.prompt("Branch address (leave blank for none)", merchant.address || "");
+    if (address === null) return;
+    const updated = await run(() => api(`/merchants/${merchant.id}`, { method: "PATCH", body: JSON.stringify({ name, address: address.trim() || null }) }), "Merchant updated").catch(() => null);
+    if (updated) { await loadSetup(); await loadReceipts(); }
+  });
+  $("#method-form").addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const editId = data.get("edit_id"); const path = editId ? `/payment-methods/${editId}` : "/payment-methods"; const result = await run(() => api(path, { method: editId ? "PATCH" : "POST", body: JSON.stringify({ name: data.get("name"), method_type: data.get("method_type"), provider: data.get("provider") || null, last_four: data.get("last_four") || null }) }), editId ? "Payment method updated" : "Payment method added").catch(() => null); if (result) { resetMethodForm(); await loadSetup(); } });
+  $("[data-cancel-method]").addEventListener("click", resetMethodForm);
   $("#refresh-maintenance-button").addEventListener("click", () => loadMaintenance().catch((error) => notify(error.message, true)));
   $("#refresh-diagnostics").addEventListener("click", () => run(loadDiagnostics, "Diagnostics refreshed"));
   $("#clear-diagnostics").addEventListener("click", async () => {
@@ -963,7 +982,7 @@ function bindEvents() {
       if (result.image_delete_failures) notify(`Data reset; ${result.image_delete_failures} image object(s) could not be removed`, true);
     }
   });
-  $("#method-list").addEventListener("click", async (event) => { const target = event.target.closest("[data-deactivate-method]"); if (target && confirm("Deactivate this payment method? Existing receipt payments stay unchanged.")) { const result = await run(() => api(`/payment-methods/${target.dataset.deactivateMethod}/deactivate`, { method: "POST" }), "Payment method deactivated").catch(() => null); if (result) await loadSetup(); } });
+  $("#method-list").addEventListener("click", async (event) => { const edit = event.target.closest("[data-edit-method]"); const target = event.target.closest("[data-deactivate-method]"); if (edit) { const method = state.methods.find((item) => item.id === edit.dataset.editMethod); const form = $("#method-form"); form.elements.edit_id.value = method.id; form.elements.name.value = method.name; form.elements.method_type.value = method.method_type; form.elements.provider.value = method.provider || ""; form.elements.last_four.value = method.last_four || ""; form.querySelector("button[type=submit]").textContent = "Save method"; $("[data-cancel-method]").hidden = false; form.scrollIntoView({ behavior: "smooth", block: "center" }); } if (target && confirm("Deactivate this payment method? Existing receipt payments stay unchanged.")) { const result = await run(() => api(`/payment-methods/${target.dataset.deactivateMethod}/deactivate`, { method: "POST" }), "Payment method deactivated").catch(() => null); if (result) await loadSetup(); } });
 
   $("#invitation-create-form").addEventListener("submit", async (event) => {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);

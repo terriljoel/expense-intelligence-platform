@@ -94,3 +94,45 @@ def test_blank_merchant_name_is_rejected(merchant_client: TestClient) -> None:
     response = merchant_client.post("/merchants", json={"name": "   "})
 
     assert response.status_code == 422
+
+
+def test_update_merchant_recalculates_normalized_identity(
+    merchant_client: TestClient,
+) -> None:
+    merchant_id = merchant_client.post(
+        "/merchants",
+        json={"name": "Old Market", "address": "Old Street 1"},
+    ).json()["id"]
+
+    response = merchant_client.patch(
+        f"/merchants/{merchant_id}",
+        json={"name": "  New   Market ", "address": " New Street 2 "},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "New Market"
+    assert response.json()["normalized_name"] == "new market"
+    assert response.json()["address"] == "New Street 2"
+    assert response.json()["normalized_address"] == "new street 2"
+
+
+def test_update_merchant_rejects_duplicate_and_missing_records(
+    merchant_client: TestClient,
+) -> None:
+    first = merchant_client.post(
+        "/merchants", json={"name": "Market", "address": "Street 1"}
+    ).json()
+    second = merchant_client.post(
+        "/merchants", json={"name": "Market", "address": "Street 2"}
+    ).json()
+
+    duplicate = merchant_client.patch(
+        f"/merchants/{second['id']}", json={"address": first["address"]}
+    )
+    missing = merchant_client.patch(
+        "/merchants/00000000-0000-0000-0000-000000000000",
+        json={"name": "Missing"},
+    )
+
+    assert duplicate.status_code == 409
+    assert missing.status_code == 404

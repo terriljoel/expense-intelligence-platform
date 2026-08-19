@@ -47,13 +47,12 @@ def list_payment_methods(
     session: Session,
     *,
     household_id: UUID,
-    user_id: UUID,
+    user_id: UUID | None,
     include_inactive: bool = False,
 ) -> list[PaymentMethod]:
-    statement = select(PaymentMethod).where(
-        PaymentMethod.household_id == household_id,
-        PaymentMethod.user_id == user_id,
-    )
+    statement = select(PaymentMethod).where(PaymentMethod.household_id == household_id)
+    if user_id is not None:
+        statement = statement.where(PaymentMethod.user_id == user_id)
     if not include_inactive:
         statement = statement.where(PaymentMethod.is_active.is_(True))
     return list(
@@ -71,7 +70,7 @@ def get_payment_method(
     session: Session,
     *,
     household_id: UUID,
-    user_id: UUID,
+    user_id: UUID | None,
     payment_method_id: UUID,
     for_update: bool = False,
     active_only: bool = False,
@@ -79,8 +78,9 @@ def get_payment_method(
     statement = select(PaymentMethod).where(
         PaymentMethod.id == payment_method_id,
         PaymentMethod.household_id == household_id,
-        PaymentMethod.user_id == user_id,
     )
+    if user_id is not None:
+        statement = statement.where(PaymentMethod.user_id == user_id)
     if active_only:
         statement = statement.where(PaymentMethod.is_active.is_(True))
     if for_update:
@@ -95,7 +95,7 @@ def update_payment_method(
     session: Session,
     *,
     household_id: UUID,
-    user_id: UUID,
+    user_id: UUID | None,
     payment_method_id: UUID,
     changes: dict[str, object],
 ) -> PaymentMethod:
@@ -121,7 +121,7 @@ def deactivate_payment_method(
     session: Session,
     *,
     household_id: UUID,
-    user_id: UUID,
+    user_id: UUID | None,
     payment_method_id: UUID,
 ) -> PaymentMethod:
     method = get_payment_method(

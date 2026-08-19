@@ -71,12 +71,14 @@ def get_current_principal(
             detail="Authentication required",
         )
 
-    return CurrentPrincipal(
+    principal = CurrentPrincipal(
         user_id=authenticated.user_id,
         household_id=authenticated.household_id,
         role=authenticated.role,
         is_global_admin=authenticated.is_global_admin,
     )
+    request.state.principal = principal
+    return principal
 
 
 def require_household_admin(

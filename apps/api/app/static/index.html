@@ -352,12 +352,13 @@
           </section>
           <section class="card">
             <h2>Payment methods</h2>
-            <p class="muted">Cards and accounts belong to the current local user.</p>
+            <p class="muted">Cards and accounts belong to household members. Owners can view and edit every member's methods.</p>
             <form id="method-form" class="compact-form">
+              <input name="edit_id" type="hidden" />
               <label>Name<input name="name" placeholder="e.g. Personal Visa" maxlength="100" required /></label>
               <label>Type<select name="method_type" required><option value="cash">Cash</option><option value="debit_card">Debit card</option><option value="credit_card">Credit card</option><option value="bank_transfer">Bank transfer</option><option value="direct_debit">Direct debit</option><option value="mobile_wallet">Mobile wallet</option><option value="voucher">Voucher</option><option value="other">Other</option></select></label>
               <div class="inline-fields"><label>Provider<input name="provider" placeholder="Optional" maxlength="100" /></label><label>Last four<input name="last_four" placeholder="1234" maxlength="4" inputmode="numeric" pattern="[0-9]{4}" /></label></div>
-              <button class="primary">Add method</button>
+              <div class="form-actions"><button class="primary">Add method</button><button class="text-button" type="button" data-cancel-method hidden>Cancel edit</button></div>
             </form>
             <div id="method-list" class="setting-list"></div>
           </section>
@@ -379,7 +380,7 @@
         </section>
         <section id="diagnostics-card" class="card" hidden>
           <div class="section-heading">
-            <div><h2>Application diagnostics</h2><p class="muted">Global Admin only · latest 100 entries · cleared when the app restarts</p></div>
+            <div><h2>Application diagnostics</h2><p class="muted">Household owners see household failures; Global Admin sees all · latest 100 entries · cleared when the app restarts</p></div>
             <div class="action-row"><button id="refresh-diagnostics" class="secondary" type="button">Refresh</button><button id="clear-diagnostics" class="text-button" type="button">Clear</button></div>
           </div>
           <div id="diagnostics-list" class="diagnostics-list"><p class="muted">No errors recorded.</p></div>

@@ -156,6 +156,7 @@ def create_receipt(
     notes: str | None,
     capture_id: UUID | None = None,
     payment_method_id: UUID | None = None,
+    payment_user_id: UUID | None = None,
     category: str = "other",
     receipt_number: str | None = None,
 ) -> Receipt:
@@ -301,7 +302,7 @@ def create_receipt(
         get_payment_method(
             session,
             household_id=household_id,
-            user_id=created_by_user_id,
+            user_id=payment_user_id or created_by_user_id,
             payment_method_id=payment_method_id,
             active_only=True,
         )
@@ -313,7 +314,7 @@ def create_receipt(
             session,
             household_id=household_id,
             receipt_id=receipt.id,
-            user_id=created_by_user_id,
+            user_id=selected_method.user_id,
             payment_method_id=selected_method.id,
             amount=stated_total,
         )
@@ -722,7 +723,7 @@ def get_receipt_payment(
     *,
     household_id: UUID,
     receipt_id: UUID,
-    user_id: UUID,
+    user_id: UUID | None,
     payment_id: UUID,
     for_update: bool = False,
 ) -> ReceiptPayment:
@@ -730,8 +731,9 @@ def get_receipt_payment(
         ReceiptPayment.id == payment_id,
         ReceiptPayment.receipt_id == receipt_id,
         ReceiptPayment.household_id == household_id,
-        ReceiptPayment.user_id == user_id,
     )
+    if user_id is not None:
+        statement = statement.where(ReceiptPayment.user_id == user_id)
     if for_update:
         statement = statement.with_for_update()
     payment = session.scalar(statement)
@@ -746,7 +748,8 @@ def update_receipt_payment(
     household_id: UUID,
     receipt_id: UUID,
     payment_id: UUID,
-    user_id: UUID,
+    user_id: UUID | None,
+    actor_user_id: UUID,
     changes: dict[str, object],
 ) -> ReceiptPayment:
     _get_editable_receipt(
@@ -761,22 +764,20 @@ def update_receipt_payment(
         for_update=True,
     )
 
-    new_method_id = changes.get(
-        "payment_method_id",
-        payment.payment_method_id,
-    )
-    if new_method_id != payment.payment_method_id:
+    new_method_id = changes.get("payment_method_id", payment.payment_method_id)
+    new_user_id = changes.get("user_id", payment.user_id)
+    if new_method_id != payment.payment_method_id or new_user_id != payment.user_id:
         get_payment_method(
             session,
             household_id=household_id,
-            user_id=user_id,
+            user_id=new_user_id,
             payment_method_id=new_method_id,
             active_only=True,
         )
         duplicate = session.scalar(
             select(ReceiptPayment.id).where(
                 ReceiptPayment.receipt_id == receipt_id,
-                ReceiptPayment.user_id == user_id,
+                ReceiptPayment.user_id == new_user_id,
                 ReceiptPayment.payment_method_id == new_method_id,
                 ReceiptPayment.id != payment_id,
             )
@@ -792,7 +793,7 @@ def update_receipt_payment(
         record_audit_event(
             session,
             household_id=household_id,
-            actor_user_id=user_id,
+            actor_user_id=actor_user_id,
             receipt_id=receipt_id,
             event_type="payment_updated",
             event_data={
@@ -809,7 +810,8 @@ def remove_receipt_payment(
     household_id: UUID,
     receipt_id: UUID,
     payment_id: UUID,
-    user_id: UUID,
+    user_id: UUID | None,
+    actor_user_id: UUID,
 ) -> None:
     _get_editable_receipt(
         session, household_id=household_id, receipt_id=receipt_id
@@ -836,7 +838,7 @@ def remove_receipt_payment(
     record_audit_event(
         session,
         household_id=household_id,
-        actor_user_id=user_id,
+        actor_user_id=actor_user_id,
         receipt_id=receipt_id,
         event_type="payment_removed",
         event_data=snapshot,

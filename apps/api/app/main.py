@@ -60,11 +60,13 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.exception_handler(Exception)
 async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    principal = getattr(request.state, "principal", None)
     error_id = record_error(
         message=str(exc) or type(exc).__name__,
         method=request.method,
         path=request.url.path,
         exception=exc,
+        household_id=principal.household_id if principal is not None else None,
     )
     logger.exception("Unhandled request error [%s]", error_id, exc_info=exc)
     return JSONResponse(

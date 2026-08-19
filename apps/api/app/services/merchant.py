@@ -12,6 +12,10 @@ class MerchantAlreadyExistsError(Exception):
     """Raised when a household already has the normalized merchant name."""
 
 
+class MerchantNotFoundError(Exception):
+    """Raised when a merchant is missing or belongs to another household."""
+
+
 def normalize_merchant_name(name: str) -> str:
     cleaned = " ".join(name.split())
     return unicodedata.normalize("NFKC", cleaned).casefold()
@@ -68,3 +72,37 @@ def list_merchants(session: Session, *, household_id: UUID) -> list[Merchant]:
             .order_by(Merchant.normalized_name)
         )
     )
+
+
+def update_merchant(
+    session: Session,
+    *,
+    household_id: UUID,
+    merchant_id: UUID,
+    changes: dict[str, object],
+) -> Merchant:
+    merchant = session.scalar(
+        select(Merchant)
+        .where(
+            Merchant.id == merchant_id,
+            Merchant.household_id == household_id,
+        )
+        .with_for_update()
+    )
+    if merchant is None:
+        raise MerchantNotFoundError
+
+    name = str(changes.get("name", merchant.name))
+    address = changes.get("address", merchant.address)
+    address = str(address) if address is not None else None
+    try:
+        with session.begin_nested():
+            merchant.name = name
+            merchant.normalized_name = normalize_merchant_name(name)
+            merchant.address = address
+            merchant.normalized_address = normalize_merchant_address(address)
+            session.flush()
+    except IntegrityError as exc:
+        raise MerchantAlreadyExistsError from exc
+    session.refresh(merchant)
+    return merchant

@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from app.services.diagnostics import clear_errors, recent_errors, record_error
 
 
@@ -25,3 +27,23 @@ def test_diagnostic_exception_includes_traceback() -> None:
     entry = recent_errors()[0]
     assert entry["id"] == error_id
     assert "ValueError: raw diagnostic detail" in entry["traceback"]
+
+
+def test_diagnostics_can_be_read_and_cleared_by_household() -> None:
+    clear_errors()
+    first_household, second_household = uuid4(), uuid4()
+    record_error(message="first", household_id=first_household)
+    record_error(message="second", household_id=second_household)
+    record_error(message="unscoped")
+
+    assert [
+        entry["message"]
+        for entry in recent_errors(household_id=first_household)
+    ] == ["first"]
+
+    clear_errors(household_id=first_household)
+
+    assert {entry["message"] for entry in recent_errors()} == {
+        "second",
+        "unscoped",
+    }

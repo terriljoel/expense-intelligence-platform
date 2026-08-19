@@ -17,6 +17,7 @@ from app.services.invitation import (
     accept_existing_user_invitation,
     create_invitation,
 )
+from app.services.payment_method import create_payment_method
 
 
 @dataclass(frozen=True)
@@ -280,3 +281,62 @@ def test_global_admin_can_reset_multi_household_account(
     )
 
     assert response.status_code == 204
+
+
+def test_owner_can_manage_member_methods_and_record_member_payment(
+    household_admin_context: HouseholdAdminContext,
+) -> None:
+    context = household_admin_context
+    member, _ = _add_member(context.session, household_id=context.seed.household_id)
+    member_method = create_payment_method(
+        context.session,
+        household_id=context.seed.household_id,
+        user_id=member.id,
+        name="Member Visa",
+        method_type="credit_card",
+        provider="Member Bank",
+        last_four="4321",
+    )
+    owner_method = context.client.post(
+        "/payment-methods",
+        json={"name": "Owner Cash", "method_type": "cash"},
+    ).json()
+
+    visible = context.client.get("/payment-methods").json()
+    receipt = context.client.post(
+        "/receipts",
+        json={
+            "purchase_date": "2026-08-19",
+            "currency": "EUR",
+            "stated_total": "5.00",
+            "payment_method_id": str(member_method.id),
+        },
+    ).json()
+    payment = context.client.get(f"/receipts/{receipt['id']}/payments").json()[0]
+    edited_payment = context.client.patch(
+        f"/receipts/{receipt['id']}/payments/{payment['id']}",
+        json={"amount": "4.00"},
+    )
+    edited_method = context.client.patch(
+        f"/payment-methods/{member_method.id}", json={"name": "Member Card"}
+    )
+
+    assert member_method.id in {UUID(method["id"]) for method in visible}
+    assert payment["user_id"] == str(member.id)
+    assert edited_payment.status_code == 200
+    assert edited_payment.json()["amount"] == "4.00"
+    assert edited_method.status_code == 200
+    assert edited_method.json()["name"] == "Member Card"
+
+    app.dependency_overrides[get_current_principal] = lambda: CurrentPrincipal(
+        user_id=member.id,
+        household_id=context.seed.household_id,
+        role="member",
+    )
+    member_visible = context.client.get("/payment-methods").json()
+    forbidden_owner_edit = context.client.patch(
+        f"/payment-methods/{owner_method['id']}", json={"name": "Not allowed"}
+    )
+
+    assert {method["user_id"] for method in member_visible} == {str(member.id)}
+    assert forbidden_owner_edit.status_code == 404

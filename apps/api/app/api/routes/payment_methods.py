@@ -24,6 +24,10 @@ from app.services.payment_method import (
 router = APIRouter(prefix="/payment-methods", tags=["payment methods"])
 
 
+def _visible_user_id(principal: CurrentPrincipal) -> UUID | None:
+    return None if principal.role == "owner" or principal.is_global_admin else principal.user_id
+
+
 @router.post(
     "",
     response_model=PaymentMethodResponse,
@@ -61,7 +65,7 @@ def get_payment_methods(
     methods = list_payment_methods(
         session,
         household_id=principal.household_id,
-        user_id=principal.user_id,
+        user_id=_visible_user_id(principal),
         include_inactive=include_inactive,
     )
     return [PaymentMethodResponse.model_validate(method) for method in methods]
@@ -77,7 +81,7 @@ def get_payment_method_by_id(
         method = get_payment_method(
             session,
             household_id=principal.household_id,
-            user_id=principal.user_id,
+            user_id=_visible_user_id(principal),
             payment_method_id=payment_method_id,
         )
     except PaymentMethodNotFoundError as exc:
@@ -99,7 +103,7 @@ def patch_payment_method(
         method = update_payment_method(
             session,
             household_id=principal.household_id,
-            user_id=principal.user_id,
+            user_id=_visible_user_id(principal),
             payment_method_id=payment_method_id,
             changes=payload.model_dump(exclude_unset=True),
         )
@@ -129,7 +133,7 @@ def post_payment_method_deactivation(
         method = deactivate_payment_method(
             session,
             household_id=principal.household_id,
-            user_id=principal.user_id,
+            user_id=_visible_user_id(principal),
             payment_method_id=payment_method_id,
         )
     except PaymentMethodNotFoundError as exc:

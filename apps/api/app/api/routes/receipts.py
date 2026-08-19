@@ -68,9 +68,28 @@ from app.services.receipt_image_storage import (
     ReceiptImageStorage,
     ReceiptImageStorageError,
 )
+from app.services.payment_method import get_payment_method
 
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
+
+
+def _payment_scope(principal: CurrentPrincipal) -> UUID | None:
+    return None if principal.role == "owner" or principal.is_global_admin else principal.user_id
+
+
+def _payment_owner(
+    session: Session,
+    principal: CurrentPrincipal,
+    payment_method_id: UUID,
+) -> UUID:
+    return get_payment_method(
+        session,
+        household_id=principal.household_id,
+        user_id=_payment_scope(principal),
+        payment_method_id=payment_method_id,
+        active_only=True,
+    ).user_id
 
 
 def _receipt_response(session: Session, receipt: Receipt) -> ReceiptResponse:
@@ -155,12 +174,18 @@ def post_receipt(
     session: Session = Depends(get_db_session),
 ) -> ReceiptResponse:
     try:
+        payment_user_id = (
+            _payment_owner(session, principal, payload.payment_method_id)
+            if payload.payment_method_id is not None
+            else None
+        )
         receipt = create_receipt(
             session,
             household_id=principal.household_id,
             created_by_user_id=principal.user_id,
             merchant_id=payload.merchant_id,
             payment_method_id=payload.payment_method_id,
+            payment_user_id=payment_user_id,
             category=payload.category,
             purchase_date=payload.purchase_date,
             currency=payload.currency,
@@ -452,11 +477,12 @@ def post_receipt_payment(
     session: Session = Depends(get_db_session),
 ) -> ReceiptPaymentResponse:
     try:
+        payment_user_id = _payment_owner(session, principal, payload.payment_method_id)
         payment = add_receipt_payment(
             session,
             household_id=principal.household_id,
             receipt_id=receipt_id,
-            user_id=principal.user_id,
+            user_id=payment_user_id,
             payment_method_id=payload.payment_method_id,
             amount=payload.amount,
         )
@@ -519,13 +545,19 @@ def patch_receipt_payment(
     session: Session = Depends(get_db_session),
 ) -> ReceiptPaymentResponse:
     try:
+        changes = payload.model_dump(exclude_unset=True)
+        if payload.payment_method_id is not None:
+            changes["user_id"] = _payment_owner(
+                session, principal, payload.payment_method_id
+            )
         payment = update_receipt_payment(
             session,
             household_id=principal.household_id,
             receipt_id=receipt_id,
             payment_id=payment_id,
-            user_id=principal.user_id,
-            changes=payload.model_dump(exclude_unset=True),
+            user_id=_payment_scope(principal),
+            actor_user_id=principal.user_id,
+            changes=changes,
         )
     except ReceiptNotFoundError as exc:
         raise HTTPException(
@@ -571,7 +603,8 @@ def delete_receipt_payment(
             household_id=principal.household_id,
             receipt_id=receipt_id,
             payment_id=payment_id,
-            user_id=principal.user_id,
+            user_id=_payment_scope(principal),
+            actor_user_id=principal.user_id,
         )
     except ReceiptNotFoundError as exc:
         raise HTTPException(
