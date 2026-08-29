@@ -343,7 +343,7 @@ def create_capture(
     filename: str | None,
     media_type: str | None,
     content: bytes,
-) -> ReceiptCapture:
+) -> tuple[ReceiptCapture, bool]:
     if not content:
         raise CaptureValidationError("Choose a non-empty receipt image")
     if len(content) > settings.receipt_image_max_bytes:
@@ -358,13 +358,15 @@ def create_capture(
 
     image_sha256 = hashlib.sha256(content).hexdigest()
     duplicate = session.scalar(
-        select(ReceiptCapture.id).where(
+        select(ReceiptCapture).where(
             ReceiptCapture.household_id == household_id,
             ReceiptCapture.image_sha256 == image_sha256,
         )
     )
     if duplicate is not None:
-        raise DuplicateCaptureError
+        if duplicate.receipt_id is not None:
+            raise DuplicateCaptureError
+        return duplicate, False
 
     capture_id = uuid4()
     extension = allowed[0]
@@ -388,7 +390,7 @@ def create_capture(
     except IntegrityError as exc:
         storage.delete(object_key)
         raise DuplicateCaptureError from exc
-    return capture
+    return capture, True
 
 
 def get_capture(
@@ -472,9 +474,14 @@ def process_capture_ocr(
     capture.suggested_items = [
         {
             "description": item.description,
-            "quantity": str(item.quantity) if item.quantity is not None else None,
+            "raw_quantity_text": (
+                str(item.quantity) if item.quantity is not None else None
+            ),
+            "quantity": (
+                str(abs(item.quantity)) if item.quantity is not None else None
+            ),
             "unit_price": (
-                str(item.unit_price) if item.unit_price is not None else None
+                str(abs(item.unit_price)) if item.unit_price is not None else None
             ),
             "line_total": str(item.line_total),
             "line_type": "discount" if item.line_total < 0 else "product",

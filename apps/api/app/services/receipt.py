@@ -294,15 +294,17 @@ def create_receipt(
                 raw_description=str(item["description"]),
                 description=str(item["description"]),
                 raw_quantity_text=(
-                    str(item["quantity"]) if item.get("quantity") is not None else None
+                    str(item.get("raw_quantity_text") or item["quantity"])
+                    if item.get("quantity") is not None
+                    else None
                 ),
                 quantity=(
-                    Decimal(str(item["quantity"]))
+                    abs(Decimal(str(item["quantity"]))) or None
                     if item.get("quantity") is not None
                     else None
                 ),
                 unit_price=(
-                    Decimal(str(item["unit_price"]))
+                    abs(Decimal(str(item["unit_price"])))
                     if item.get("unit_price") is not None
                     else None
                 ),

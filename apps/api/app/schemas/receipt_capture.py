@@ -43,3 +43,4 @@ class ReceiptCaptureResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     image_url: str = ""
+    reused: bool = False

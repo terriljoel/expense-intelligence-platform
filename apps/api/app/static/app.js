@@ -837,7 +837,10 @@ function bindEvents() {
       const body = new FormData();
       body.append("file", selectedReceiptImage);
       const uploaded = await run(() => api("/receipt-captures", { method: "POST", body }), null);
-      state.capture = await run(() => api(`/receipt-captures/${uploaded.id}/ocr`, { method: "POST" }), uploaded.ocr_status === "pending" ? "Receipt image uploaded" : null);
+      state.capture = uploaded.ocr_status === "succeeded"
+        ? uploaded
+        : await run(() => api(`/receipt-captures/${uploaded.id}/ocr`, { method: "POST" }), uploaded.ocr_status === "pending" ? "Receipt image uploaded" : null);
+      if (uploaded.reused) notify("Recovered the earlier unfinished receipt capture");
       renderCaptureReview();
     } catch (error) { showCaptureUploadError(error.message || "The image could not be uploaded."); }
     finally { button.disabled = false; button.textContent = "Upload and read text"; }

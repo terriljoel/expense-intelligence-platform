@@ -55,10 +55,10 @@ class NegativeLineOcrProvider:
             raw_text="REWE\nDatum 23.07.2026\nSUMME EUR 7,91\n",
             line_items=(
                 OcrLineItem(
-                    description="Kirschen lose",
-                    quantity=None,
-                    unit_price=None,
-                    line_total=Decimal("-2.09"),
+                    description="Pfandrückgabe",
+                    quantity=Decimal("-3.0"),
+                    unit_price=Decimal("0.25"),
+                    line_total=Decimal("-0.75"),
                 ),
             ),
         )
@@ -236,13 +236,16 @@ def test_negative_ocr_line_is_created_as_discount(
     assert receipt.status_code == 201
     items = capture_client.get(f"/receipts/{receipt.json()['id']}/items").json()
     assert items[0]["line_type"] == "discount"
-    assert items[0]["line_total"] == "-2.09"
+    assert items[0]["quantity"] == "3.000"
+    assert items[0]["raw_quantity_text"] == "-3.0"
+    assert items[0]["unit_price"] == "0.2500"
+    assert items[0]["line_total"] == "-0.75"
 
 
-def test_duplicate_and_invalid_images_are_rejected(
+def test_unfinished_duplicate_image_is_recovered(
     capture_client: TestClient,
 ) -> None:
-    upload_capture(capture_client)
+    original = upload_capture(capture_client)
     duplicate = capture_client.post(
         "/receipt-captures",
         files={"file": ("again.png", PNG_IMAGE, "image/png")},
@@ -252,8 +255,33 @@ def test_duplicate_and_invalid_images_are_rejected(
         files={"file": ("fake.png", b"not an image", "image/png")},
     )
 
-    assert duplicate.status_code == 409
+    assert duplicate.status_code == 200
+    assert duplicate.json()["id"] == original["id"]
+    assert duplicate.json()["reused"] is True
     assert invalid.status_code == 422
+
+
+def test_image_linked_to_receipt_is_rejected_as_duplicate(
+    capture_client: TestClient,
+) -> None:
+    uploaded = upload_capture(capture_client)
+    receipt = capture_client.post(
+        "/receipts",
+        json={
+            "capture_id": uploaded["id"],
+            "purchase_date": "2026-07-23",
+            "currency": "EUR",
+            "stated_total": "12.34",
+        },
+    )
+
+    duplicate = capture_client.post(
+        "/receipt-captures",
+        files={"file": ("again.png", PNG_IMAGE, "image/png")},
+    )
+
+    assert receipt.status_code == 201
+    assert duplicate.status_code == 409
 
 
 def test_upload_policy_and_oversized_image_return_clear_413(

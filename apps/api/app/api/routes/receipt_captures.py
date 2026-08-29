@@ -56,10 +56,13 @@ def get_upload_policy(
     }
 
 
-def _capture_response(capture: object) -> ReceiptCaptureResponse:
+def _capture_response(capture: object, *, reused: bool = False) -> ReceiptCaptureResponse:
     response = ReceiptCaptureResponse.model_validate(capture)
     return response.model_copy(
-        update={"image_url": f"/receipt-captures/{response.id}/image"}
+        update={
+            "image_url": f"/receipt-captures/{response.id}/image",
+            "reused": reused,
+        }
     )
 
 
@@ -69,6 +72,7 @@ def _capture_response(capture: object) -> ReceiptCaptureResponse:
     status_code=status.HTTP_201_CREATED,
 )
 async def post_receipt_capture(
+    response: Response,
     file: Annotated[UploadFile, File()],
     principal: CurrentPrincipal = Depends(get_current_principal),
     session: Session = Depends(get_db_session),
@@ -78,7 +82,7 @@ async def post_receipt_capture(
     content = await file.read(settings.receipt_image_max_bytes + 1)
     await file.close()
     try:
-        capture = create_capture(
+        capture, created = create_capture(
             session,
             settings=settings,
             storage=storage,
@@ -108,7 +112,9 @@ async def post_receipt_capture(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
-    return _capture_response(capture)
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return _capture_response(capture, reused=not created)
 
 
 @router.get("/{capture_id}", response_model=ReceiptCaptureResponse)
