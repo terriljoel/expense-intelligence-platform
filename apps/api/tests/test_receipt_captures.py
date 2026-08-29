@@ -265,6 +265,8 @@ def test_image_linked_to_receipt_is_rejected_as_duplicate(
     capture_client: TestClient,
 ) -> None:
     uploaded = upload_capture(capture_client)
+    ocr = capture_client.post(f"/receipt-captures/{uploaded['id']}/ocr")
+    assert ocr.status_code == 200
     receipt = capture_client.post(
         "/receipts",
         json={
